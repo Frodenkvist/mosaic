@@ -1,0 +1,62 @@
+<UserControl x:Class="Mosaic.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Mosaic.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:SettingsViewModel}"
+             d:DesignHeight="600" d:DesignWidth="900">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="14" MaxWidth="660" HorizontalAlignment="Left">
+
+            <!-- Scan folders -->
+            <TextBlock Text="Scan folders" Foreground="{StaticResource TextPrimary}" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="Folders Mosaic searches when you scan for games."
+                       Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,2,0,8" />
+            <Border Background="{StaticResource Surface}" CornerRadius="8" Padding="8">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Margin="8,0,0,0">
+                        <Button Content="Add folder…" Command="{Binding AddFolderCommand}" Margin="0,0,0,6" />
+                        <Button Content="Remove" Style="{StaticResource DangerButton}"
+                                Command="{Binding RemoveFolderCommand}" />
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding ScanFolders}" SelectedItem="{Binding SelectedFolder}"
+                             Height="170" />
+                </DockPanel>
+            </Border>
+
+            <!-- API key -->
+            <TextBlock Text="SteamGridDB API key" Foreground="{StaticResource TextPrimary}" FontSize="16"
+                       FontWeight="SemiBold" Margin="0,22,0,0" />
+            <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,2,0,8" TextWrapping="Wrap"
+                       Text="Used to auto-fetch cover art. Leave blank to disable artwork fetching." />
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid Grid.Column="0">
+                    <PasswordBox x:Name="KeyBox" Visibility="Visible" />
+                    <TextBox x:Name="KeyText" Text="{Binding ApiKey, UpdateSourceTrigger=PropertyChanged}"
+                             Visibility="Collapsed" />
+                </Grid>
+                <Button Grid.Column="1" Content="Test" Margin="8,0,0,0" MinWidth="70"
+                        Command="{Binding TestKeyCommand}" IsEnabled="{Binding IsTesting, Converter={StaticResource InverseBool}}" />
+            </Grid>
+            <DockPanel Margin="0,8,0,0">
+                <CheckBox x:Name="ShowKey" Content="Show key" Checked="ShowKey_Toggled" Unchecked="ShowKey_Toggled" />
+                <TextBlock Text="{Binding KeyStatusMessage}" Foreground="{StaticResource TextSecondary}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center" />
+            </DockPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="0,24,0,0">
+                <Button Content="Save settings" Style="{StaticResource AccentButton}" Command="{Binding SaveCommand}"
+                        Padding="18,9" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#7BD88F" VerticalAlignment="Center"
+                           Margin="14,0,0,0" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

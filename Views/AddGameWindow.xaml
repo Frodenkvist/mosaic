@@ -1,0 +1,66 @@
+<theming:MosaicWindow x:Class="Mosaic.Views.AddGameWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:theming="clr-namespace:Mosaic.Theming"
+        xmlns:vm="clr-namespace:Mosaic.ViewModels"
+        mc:Ignorable="d"
+        Title="Add Game" Height="520" Width="540" MinHeight="320" MinWidth="460" ShowCaptionMinMax="False"
+        Icon="/Mosaic.ico" WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        Style="{StaticResource MosaicWindowStyle}"
+        d:DataContext="{d:DesignInstance Type=vm:AddGameViewModel}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <StackPanel.Resources>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                    <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+                    <Setter Property="Margin" Value="0,12,0,4" />
+                    <Setter Property="FontSize" Value="13" />
+                </Style>
+            </StackPanel.Resources>
+
+            <TextBlock Text="Executable *" Margin="0,0,0,4" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0" Text="{Binding ExecutablePath, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0"
+                        Command="{Binding BrowseExecutableCommand}" />
+            </Grid>
+
+            <TextBlock Text="Name" />
+            <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+
+            <TextBlock Text="Launch arguments (optional)" />
+            <TextBox Text="{Binding LaunchArguments, UpdateSourceTrigger=PropertyChanged}" />
+
+            <TextBlock Text="Working directory (optional)" />
+            <TextBox Text="{Binding WorkingDirectory, UpdateSourceTrigger=PropertyChanged}" />
+
+            <TextBlock Text="Real executable for play tracking (optional)" />
+            <TextBox Text="{Binding RealExecutableName, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Foreground="{StaticResource TextMuted}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                       Text="Only needed if the game starts via a launcher. Enter the actual game process, e.g. game.exe, so play time is measured correctly." />
+        </StackPanel>
+
+        <DockPanel Grid.Row="1" Margin="0,18,0,0">
+            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}"
+                       FontSize="12" Text="* required" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" Width="92" Margin="0,0,8,0" IsCancel="True" Click="Cancel_Click" />
+                <Button Content="Add Game" Width="110" Style="{StaticResource AccentButton}"
+                        IsEnabled="{Binding IsValid}" IsDefault="True" Click="Ok_Click" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+    </ScrollViewer>
+</theming:MosaicWindow>

@@ -1,0 +1,57 @@
+<theming:MosaicWindow x:Class="Mosaic.Views.ScanResultsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:theming="clr-namespace:Mosaic.Theming"
+        xmlns:vm="clr-namespace:Mosaic.ViewModels"
+        mc:Ignorable="d"
+        Title="Scan results" Height="580" Width="660" ShowCaptionMinMax="False"
+        Icon="/Mosaic.ico" WindowStartupLocation="CenterOwner"
+        Style="{StaticResource MosaicWindowStyle}"
+        d:DataContext="{d:DesignInstance Type=vm:ScanResultsViewModel}">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"
+                   Text="Select the games to add to your library. Uncheck anything that isn't a game." />
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12">
+            <Button Content="Select all" Command="{Binding SelectAllCommand}" Margin="0,0,8,0" />
+            <Button Content="Select none" Command="{Binding SelectNoneCommand}" />
+        </StackPanel>
+
+        <Border Grid.Row="2" Background="{StaticResource Surface}" CornerRadius="8" Padding="6">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Candidates}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:ScanCandidateViewModel}">
+                            <Border Margin="4,3" Padding="10" Background="{StaticResource SurfaceAlt}" CornerRadius="6">
+                                <CheckBox IsChecked="{Binding IsSelected}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding SuggestedName}" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock Text="{Binding ExecutablePath}" FontSize="11"
+                                                   Foreground="{StaticResource TextMuted}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </CheckBox>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Cancel" Width="100" Margin="0,0,8,0" IsCancel="True" Click="Cancel_Click" />
+            <Button Content="Add selected" Width="130" Style="{StaticResource AccentButton}"
+                    IsDefault="True" Click="Ok_Click" />
+        </StackPanel>
+    </Grid>
+</theming:MosaicWindow>

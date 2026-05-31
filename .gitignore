@@ -1,0 +1,68 @@
+# ---- .NET build output ----
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+x64/
+x86/
+[Oo]ut/
+build/
+bld/
+msbuild.log
+msbuild.err
+msbuild.wrn
+*.binlog
+
+# ---- IDE / editor ----
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.userprefs
+*.sln.docstates
+
+# ---- NuGet ----
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+.nuget/
+
+# ---- Test / coverage results ----
+[Tt]est[Rr]esult*/
+TestResults/
+*.trx
+*.coverage
+*.coverlet.json
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# ---- Local databases / EF design-time artifacts ----
+# (the app's runtime database lives under %LOCALAPPDATA%\Mosaic, not in the repo)
+mosaic_design*.db
+*.db
+*.db-shm
+*.db-wal
+
+# ---- Local tooling config (keep shared .claude/commands and .claude/skills) ----
+.claude/settings.local.json
+
+# ---- OS cruft ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---- Misc temp ----
+*.tmp
+*.cache
+*.log
+
+# NOTE: Mosaic.ico and Mosaic.png are committed build resources — do not ignore them.

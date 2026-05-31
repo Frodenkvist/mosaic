@@ -1,0 +1,32 @@
+<Application x:Class="Mosaic.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Mosaic"
+             xmlns:vm="clr-namespace:Mosaic.ViewModels"
+             xmlns:views="clr-namespace:Mosaic.Views"
+             xmlns:conv="clr-namespace:Mosaic.Converters">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkTheme.xaml" />
+                <ResourceDictionary Source="Themes/MosaicWindow.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <conv:PathToImageConverter x:Key="PathToImage" />
+            <conv:SectionActiveConverter x:Key="SectionActive" />
+            <conv:InverseBooleanConverter x:Key="InverseBool" />
+            <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+            <!-- View-model to view mapping for the content host -->
+            <DataTemplate DataType="{x:Type vm:LibraryViewModel}">
+                <views:LibraryView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:RecentlyPlayedViewModel}">
+                <views:RecentlyPlayedView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                <views:SettingsView />
+            </DataTemplate>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net10.0-windows</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UseWPF>true</UseWPF>
+        <ApplicationIcon>Mosaic.ico</ApplicationIcon>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Resource Include="Mosaic.ico" />
+        <Resource Include="Mosaic.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Mosaic.Tests" />
+    </ItemGroup>
+
+    <!-- The test project lives under this folder; keep its sources out of the app build. -->
+    <ItemGroup>
+      <Compile Remove="Tests\**" />
+      <Page Remove="Tests\**" />
+      <None Remove="Tests\**" />
+      <Resource Remove="Tests\**" />
+      <EmbeddedResource Remove="Tests\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8">
+        <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        <PrivateAssets>all</PrivateAssets>
+      </PackageReference>
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.8" />
+      <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
+      <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
+    </ItemGroup>
+
+</Project>

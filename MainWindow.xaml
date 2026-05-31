@@ -1,0 +1,97 @@
+<theming:MosaicWindow x:Class="Mosaic.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Mosaic"
+        xmlns:theming="clr-namespace:Mosaic.Theming"
+        xmlns:vm="clr-namespace:Mosaic.ViewModels"
+        mc:Ignorable="d"
+        Title="Mosaic — Game Library" Height="760" Width="1200" MinHeight="520" MinWidth="860"
+        Icon="/Mosaic.ico" Style="{StaticResource MosaicWindowStyle}"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel}">
+    <theming:MosaicWindow.Resources>
+        <Style x:Key="NavButton" TargetType="Button">
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Margin" Value="10,2" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="14,0">
+                            <Grid>
+                                <Border x:Name="bar" Width="3" HorizontalAlignment="Left" CornerRadius="2"
+                                        Background="{StaticResource Accent}" Height="20" Visibility="Collapsed" />
+                                <ContentPresenter VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource Hover}" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                            </Trigger>
+                            <Trigger Property="Tag" Value="Active">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource SurfaceAlt}" />
+                                <Setter TargetName="bar" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </theming:MosaicWindow.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="224" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Navigation rail -->
+        <Border Grid.Column="0" Background="{StaticResource Surface}">
+            <StackPanel Margin="0,20">
+                <StackPanel Orientation="Horizontal" Margin="22,0,0,26">
+                    <Image Source="/Mosaic.png" Width="28" Height="28" VerticalAlignment="Center"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+                    <TextBlock Text="MOSAIC" Foreground="{StaticResource TextPrimary}" FontSize="20"
+                               FontWeight="Bold" VerticalAlignment="Center" Margin="10,0,0,0" />
+                </StackPanel>
+                <Button Style="{StaticResource NavButton}" Content="🎮   Library"
+                        Command="{Binding ShowLibraryCommand}">
+                    <Button.Tag>
+                        <Binding Path="CurrentSection" Converter="{StaticResource SectionActive}" ConverterParameter="Library" />
+                    </Button.Tag>
+                </Button>
+                <Button Style="{StaticResource NavButton}" Content="🕑   Recently Played"
+                        Command="{Binding ShowRecentlyPlayedCommand}">
+                    <Button.Tag>
+                        <Binding Path="CurrentSection" Converter="{StaticResource SectionActive}" ConverterParameter="Recently Played" />
+                    </Button.Tag>
+                </Button>
+                <Button Style="{StaticResource NavButton}" Content="⚙   Settings"
+                        Command="{Binding ShowSettingsCommand}">
+                    <Button.Tag>
+                        <Binding Path="CurrentSection" Converter="{StaticResource SectionActive}" ConverterParameter="Settings" />
+                    </Button.Tag>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- Content host -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="{Binding CurrentSection}" Foreground="{StaticResource TextPrimary}"
+                       FontSize="26" FontWeight="SemiBold" Margin="28,24,28,12" />
+            <ContentControl Grid.Row="1" Content="{Binding CurrentView}" Margin="16,0,16,16" />
+        </Grid>
+    </Grid>
+</theming:MosaicWindow>
