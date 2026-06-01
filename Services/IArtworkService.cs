@@ -8,6 +8,19 @@ public interface IArtworkService
     event EventHandler<int>? ArtworkUpdated;
 
     /// <summary>
+    /// Raised when an artwork fetch is actually attempted for a game (an API key is configured
+    /// and there is artwork still to fetch), before contacting SteamGridDB; argument is the game id.
+    /// </summary>
+    event EventHandler<int>? ArtworkFetchStarted;
+
+    /// <summary>
+    /// Raised when an attempted fetch produces no result — no confident match, no usable asset,
+    /// or an error — leaving the game on a placeholder; argument is the game id. Mutually exclusive
+    /// with <see cref="ArtworkUpdated"/> for a given attempt.
+    /// </summary>
+    event EventHandler<int>? ArtworkFetchFailed;
+
+    /// <summary>
     /// Best-effort fetch of grid/hero/logo artwork from SteamGridDB for a game.
     /// No-ops when no API key is configured. Never replaces a manual override.
     /// Cached artwork is reused rather than re-downloaded, unless <paramref name="refetch"/>

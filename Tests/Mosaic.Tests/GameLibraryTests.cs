@@ -8,6 +8,8 @@ namespace Mosaic.Tests;
 internal sealed class NoOpArtworkService : IArtworkService
 {
     public event EventHandler<int>? ArtworkUpdated { add { } remove { } }
+    public event EventHandler<int>? ArtworkFetchStarted { add { } remove { } }
+    public event EventHandler<int>? ArtworkFetchFailed { add { } remove { } }
     public Task FetchArtworkAsync(int gameId, bool refetch = false, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
     public Task<string> SetManualOverrideAsync(int gameId, ArtworkKind kind, string sourceImagePath) =>

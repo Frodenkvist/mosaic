@@ -30,6 +30,15 @@ public partial class GameTileViewModel : ObservableObject
     [ObservableProperty]
     private string _liveElapsedDisplay = string.Empty;
 
+    /// <summary>In-session artwork-fetch state, driving the per-tile fetching/failed indicators.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFetchingArtwork))]
+    [NotifyPropertyChangedFor(nameof(ArtworkFetchFailed))]
+    private ArtworkFetchStatus _fetchStatus;
+
+    public bool IsFetchingArtwork => FetchStatus == ArtworkFetchStatus.Fetching;
+    public bool ArtworkFetchFailed => FetchStatus == ArtworkFetchStatus.Failed;
+
     public bool CanLaunch => !IsRunning;
 
     /// <summary>Recomputes the live elapsed label from <see cref="RunningSince"/>.</summary>

@@ -13,9 +13,15 @@ public class AppPaths
     public string SettingsPath { get; }
 
     public AppPaths()
+        : this(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Mosaic"))
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        RootDirectory = Path.Combine(localAppData, "Mosaic");
+    }
+
+    /// <summary>Roots all data under an explicit directory (used by tests to avoid the real data dir).</summary>
+    internal AppPaths(string rootDirectory)
+    {
+        RootDirectory = rootDirectory;
         ArtworkDirectory = Path.Combine(RootDirectory, "artwork");
         DatabasePath = Path.Combine(RootDirectory, "mosaic.db");
         SettingsPath = Path.Combine(RootDirectory, "settings.json");

@@ -53,12 +53,26 @@ public class ArtworkService : IArtworkService
     }
 
     public event EventHandler<int>? ArtworkUpdated;
+    public event EventHandler<int>? ArtworkFetchStarted;
+    public event EventHandler<int>? ArtworkFetchFailed;
 
-    public async Task FetchArtworkAsync(int gameId, bool refetch = false, CancellationToken cancellationToken = default)
+    public Task FetchArtworkAsync(int gameId, bool refetch = false, CancellationToken cancellationToken = default)
+    {
+        // Cheap guard so a key-less install doesn't even schedule background work.
+        if (string.IsNullOrWhiteSpace(_settings.Current.SteamGridDbApiKey))
+            return Task.CompletedTask; // Graceful degradation: no key, no auto-fetch.
+
+        // Run the fetch (network, file and DB I/O) off the caller's thread so a slow fetch can
+        // never block the UI. The lifecycle events fire on this background thread; the view
+        // models marshal them onto the UI thread via App.RunOnUiAsync.
+        return Task.Run(() => FetchArtworkCoreAsync(gameId, refetch, cancellationToken), cancellationToken);
+    }
+
+    private async Task FetchArtworkCoreAsync(int gameId, bool refetch, CancellationToken cancellationToken)
     {
         var apiKey = _settings.Current.SteamGridDbApiKey;
         if (string.IsNullOrWhiteSpace(apiKey))
-            return; // Graceful degradation: no key, no auto-fetch.
+            return; // Key was cleared between the guard and here; nothing to do.
 
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var game = await db.Games
@@ -73,55 +87,90 @@ public class ArtworkService : IArtworkService
             .Where(k => refetch ? !HasManualOverride(game, k.Kind) : !HasUsableArtwork(game, k.Kind))
             .ToList();
         if (needed.Count == 0)
-            return;
+            return; // Already complete: no fetch attempted, nothing to report.
+
+        // A network fetch will actually run: announce it so the UI can show "fetching".
+        ArtworkFetchStarted?.Invoke(this, gameId);
 
         var changed = false;
-
-        // One game at a time hits SteamGridDB, so a batch add doesn't trip the rate limit.
-        await FetchGate.WaitAsync(cancellationToken);
         try
         {
-            var match = await ResolveGameMatchAsync(game, apiKey, cancellationToken);
-            if (match is null)
-                return; // No confident match: leave placeholders.
-
-            // Adopt the matched title when the name was auto-derived from the path (the
-            // executable or a folder name, e.g. a scan), but leave a name the user typed.
-            // Not on refetch.
-            if (!refetch && NameIsAutoDerived(game) && !string.IsNullOrWhiteSpace(match.Name)
-                && !string.Equals(game.Name, match.Name, StringComparison.Ordinal))
+            // One game at a time hits SteamGridDB, so a batch add doesn't trip the rate limit.
+            await FetchGate.WaitAsync(cancellationToken);
+            try
             {
-                game.Name = match.Name;
-                changed = true;
+                var match = await ResolveGameMatchAsync(game, apiKey, cancellationToken);
+                if (match is not null)
+                {
+                    // Adopt the matched title when the name was auto-derived from the path (the
+                    // executable or a folder name, e.g. a scan), but leave a name the user typed.
+                    // Not on refetch.
+                    if (!refetch && NameIsAutoDerived(game) && !string.IsNullOrWhiteSpace(match.Name)
+                        && !string.Equals(game.Name, match.Name, StringComparison.Ordinal))
+                    {
+                        game.Name = match.Name;
+                        changed = true;
+                    }
+
+                    foreach (var (kind, endpoint) in needed)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        try
+                        {
+                            var url = await _client.GetFirstAssetUrlAsync(endpoint, match.Id, apiKey, cancellationToken);
+                            if (url is null)
+                                continue;
+
+                            var bytes = await _client.DownloadAsync(url, cancellationToken);
+                            if (bytes is null || bytes.Length == 0)
+                                continue;
+
+                            var localPath = BuildCachePath(gameId, kind, url);
+                            await File.WriteAllBytesAsync(localPath, bytes, cancellationToken);
+
+                            UpsertArtworkRow(game, kind, localPath, isManual: false, sourceId: match.Id);
+                            changed = true;
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw; // genuine cancellation: abort the whole fetch
+                        }
+                        catch
+                        {
+                            // This kind failed (e.g. the request timed out or errored). Skip it but
+                            // keep any other kinds we did get — a slow hero must not lose the cover.
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                FetchGate.Release();
             }
 
-            foreach (var (kind, endpoint) in needed)
+            if (changed)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var url = await _client.GetFirstAssetUrlAsync(endpoint, match.Id, apiKey, cancellationToken);
-                if (url is null)
-                    continue;
-
-                var bytes = await _client.DownloadAsync(url, cancellationToken);
-                if (bytes is null || bytes.Length == 0)
-                    continue;
-
-                var localPath = BuildCachePath(gameId, kind, url);
-                await File.WriteAllBytesAsync(localPath, bytes, cancellationToken);
-
-                UpsertArtworkRow(game, kind, localPath, isManual: false, sourceId: match.Id);
-                changed = true;
+                await db.SaveChangesAsync(cancellationToken);
+                ArtworkUpdated?.Invoke(this, gameId);
+            }
+            else
+            {
+                // Attempted but no confident match / no usable asset: leave the placeholder
+                // and report failure so the UI can swap "fetching" for a "failed" indicator.
+                ArtworkFetchFailed?.Invoke(this, gameId);
             }
         }
-        finally
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            FetchGate.Release();
+            throw; // Genuine cancellation (e.g. app shutdown) is an abort — let callers stop.
         }
-
-        if (changed)
+        catch
         {
-            await db.SaveChangesAsync(cancellationToken);
-            ArtworkUpdated?.Invoke(this, gameId);
+            // Any other failure — including an HTTP timeout, which surfaces as a
+            // TaskCanceledException whose token is NOT ours — is reported via the event and
+            // swallowed. Reporting (not throwing) means the UI leaves the "fetching" state and a
+            // single slow game can't abort a batch refetch.
+            ArtworkFetchFailed?.Invoke(this, gameId);
         }
     }
 

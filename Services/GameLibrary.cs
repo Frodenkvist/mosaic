@@ -335,7 +335,9 @@ public class GameLibrary : IGameLibrary
         }
         catch
         {
-            // Artwork is best-effort; never surface failures from a background fetch.
+            // Artwork is best-effort: swallow so a background fetch can't crash the app. Fetch
+            // failures are reported to the UI via the artwork service's ArtworkFetchFailed event,
+            // not thrown; this guards only a rare rethrow (e.g. genuine cancellation on shutdown).
         }
     }
 
