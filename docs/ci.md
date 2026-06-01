@@ -58,20 +58,37 @@ Install on `munin` and put on `PATH`:
 Record the installed versions (`dotnet --version`, `ISCC` banner, `gh --version`) so the environment
 is reproducible.
 
-### 2. GitHub token credential
+**Git checkout gotcha:** make sure the agent's git **credential helper** does not hold a stale
+`github.com` credential. On Windows, git consults the helper (`manager`/`wincred`) *before* the PAT
+Jenkins injects via `GIT_ASKPASS`, so a wrong stored credential overrides the real one and checkout
+fails with `Repository not found`. See Troubleshooting.
 
-Add a Jenkins **Secret text** credential with id **`mosaic-github-token`** holding a GitHub
-**fine-grained PAT** scoped to `Frodenkvist/mosaic` with **Contents: read and write** (sufficient for
-`gh release create` to push tags and releases). The `Jenkinsfile` binds it as `GH_TOKEN`, which
-Jenkins masks in the console log; the token never appears in the repo.
+### 2. Credentials
+
+The pipeline uses **two** credentials, which may share one PAT:
+
+- **Repo checkout** — configured in the *job's* Git SCM settings (not the `Jenkinsfile`); Jenkins
+  uses it to clone the repo. Needs at least **read** access to `Frodenkvist/mosaic`. Use either an
+  SSH-key credential (with the `git@github.com:…` URL) or — for HTTPS (`https://…`) — a **Username
+  with password** credential whose password is the PAT (a *Secret text* credential will **not**
+  appear in the Git SCM dropdown). Note: GitHub returns "Repository not found" (404) — even for
+  public repos — when the presented credential can't authenticate, so a wrong/empty token shows up
+  as a clone failure here, not an auth error.
+- **`mosaic-github-token`** — a Jenkins **Secret text** credential holding a GitHub **fine-grained
+  PAT** scoped to `Frodenkvist/mosaic` with **Contents: read and write** (so `gh release create` can
+  push tags and releases). The `Jenkinsfile` binds it as `GH_TOKEN`, which Jenkins masks in the
+  console log; the token never appears in the repo.
+
+A single fine-grained PAT with **Contents: read and write** on the repo can serve both (use it as the
+checkout credential's password and as `mosaic-github-token`).
 
 ### 3. Pipeline job
 
 Create a **Pipeline** (or **Multibranch Pipeline**) job:
 
-- **Definition:** *Pipeline script from SCM* → Git → `git@github.com:Frodenkvist/mosaic.git`,
-  **Script Path** `Jenkinsfile`.
-- Provide the SSH/credentials Jenkins needs to fetch the repo.
+- **Definition:** *Pipeline script from SCM* → Git, **Script Path** `Jenkinsfile`.
+- **Repository URL:** SSH `git@github.com:Frodenkvist/mosaic.git` (with an SSH-key credential) or
+  HTTPS `https://github.com/Frodenkvist/mosaic.git` (with a PAT credential — see Credentials above).
 - A single-branch pipeline job should track `*/master`; a multibranch job discovers branches and
   the `Jenkinsfile`'s `master`-only gating still applies.
 
@@ -99,6 +116,22 @@ Create a **Pipeline** (or **Multibranch Pipeline**) job:
   **not** require the Timestamper or PowerShell-step plugins (the version is parsed with the core
   `readFile` step and `package.ps1` is invoked via `bat`). If you add steps from other plugins,
   install those plugins too.
+- **`Repository not found` / git status 128 at the Checkout stage:** GitHub returns a 404 (not an
+  auth error) for an unauthorized request, even on a public repo. First confirm the token itself is
+  good — `git ls-remote https://<PAT>@github.com/Frodenkvist/mosaic.git` should list refs (embedding
+  `<PAT>@` bypasses any credential helper). If it does, the cause is one of:
+  - **Windows-agent credential helper (the cause seen on `munin`):** git on Windows is configured
+    with `credential.helper = manager`/`wincred`, which is consulted *before* the PAT Jenkins injects
+    via `GIT_ASKPASS`. A stale/wrong stored `github.com` credential then overrides the PAT → 404. A
+    plain `git ls-remote https://github.com/Frodenkvist/mosaic.git` (no `<PAT>@`) reproduces it.
+    Fix on the agent: clear the stored entry (Credential Manager → Windows Credentials →
+    `git:https://github.com`) **or** disable the helper — `git config --system --unset-all
+    credential.helper`.
+  - **Wrong credential entry / scope:** the job points at the wrong Jenkins credential, a
+    fine-grained PAT that doesn't include this repo, or a classic PAT lacking `repo`.
+
+  Or sidestep HTTPS entirely: switch the job to SSH (`git@github.com:Frodenkvist/mosaic.git`) with an
+  SSH-key credential — credential helpers only affect HTTPS.
 - **Missing toolchain** (e.g. `ISCC.exe` not found): the Package stage fails fast with guidance and
   **no partial release is published**. Install the missing tool on `munin` and re-run.
 - **Partial/bad release:** delete the GitHub Release and its `v<version>` tag; the idempotent gate
