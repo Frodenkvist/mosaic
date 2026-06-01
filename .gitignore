@@ -60,6 +60,10 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
+# ---- Installer build output (keep installer\Mosaic.iss, package.ps1, README.md) ----
+installer/publish/
+installer/dist/
+
 # ---- Misc temp ----
 *.tmp
 *.cache

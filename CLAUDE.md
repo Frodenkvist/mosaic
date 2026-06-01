@@ -24,6 +24,19 @@ dotnet ef migrations add <Name>          # uses MosaicDbContextFactory (design-t
 
 The test project lives *inside* the app's directory tree; `Mosaic.csproj` explicitly excludes `Tests\**` from its own compilation. The app exposes internals to tests via `InternalsVisibleTo("Mosaic.Tests")`.
 
+### Packaging / Release
+
+The Windows installer lives under `installer\` (see `installer\README.md`). One command publishes and builds it:
+
+```powershell
+.\installer\package.ps1                   # version from <Version> in Mosaic.csproj
+.\installer\package.ps1 -Version 1.2.0    # or override
+```
+
+It runs a **self-contained win-x64** `dotnet publish` into `installer\publish\`, then compiles `installer\Mosaic.iss` with **Inno Setup** (`ISCC.exe`, install via `winget install --exact --id JRSoftware.InnoSetup`), emitting `installer\dist\MosaicSetup-<version>.exe`. The publish-only RID/self-contained properties in `Mosaic.csproj` are conditioned so normal `dotnet build`/`dotnet run` are unaffected. Key choices: **per-user install** (`%LocalAppData%\Programs\Mosaic`, no admin — keeps a future auto-updater elevation-free), **self-contained** (bundles .NET 10, no prerequisites), and uninstall **keeps user data** under `%LocalAppData%\Mosaic` by default (prompts before deleting). `installer\publish\` and `installer\dist\` are git-ignored.
+
+The installer is currently **unsigned** — Windows SmartScreen may warn about an unknown publisher; code signing (a `SignTool` step in `Mosaic.iss`) is a planned follow-up. Auto-update is not yet implemented.
+
 ## Architecture
 
 **Composition.** `App.OnStartup` (`App.xaml.cs`) builds a `Microsoft.Extensions.Hosting` host, registers all services + view models in `ConfigureServices`, applies EF migrations, reconciles any play sessions left open by a crash, then shows `MainWindow`. `App.Services` is the static service-locator escape hatch (used by `DialogService` to resolve transient view models). Runtime data lives under `%LOCALAPPDATA%\Mosaic\` (resolved by `AppPaths`): `mosaic.db`, `settings.json`, and `artwork\`.

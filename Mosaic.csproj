@@ -9,6 +9,31 @@
         <ApplicationIcon>Mosaic.ico</ApplicationIcon>
     </PropertyGroup>
 
+    <!-- Product / version metadata. <Version> is the single source of truth the installer
+         packaging script (installer\package.ps1) reads to name and stamp MosaicSetup-<version>.exe. -->
+    <PropertyGroup>
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <FileVersion>1.0.0.0</FileVersion>
+        <Product>Mosaic</Product>
+        <Company>Mosaic</Company>
+        <Authors>Mosaic</Authors>
+    </PropertyGroup>
+
+    <!-- Self-contained win-x64 publish settings. Scoped to publish so the normal
+         `dotnet build` / `dotnet run` dev flow is unaffected (no RID restore in dev).
+         installer\package.ps1 also passes these on the CLI for an explicit publish. -->
+    <PropertyGroup Condition="'$(_IsPublishing)' == 'true' Or '$(PublishProtocol)' != ''">
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <SelfContained>true</SelfContained>
+    </PropertyGroup>
+    <PropertyGroup>
+        <!-- Trim/single-file intentionally NOT enabled: WPF + reflection + EF Core make them risky. -->
+        <PublishTrimmed>false</PublishTrimmed>
+        <PublishSingleFile>false</PublishSingleFile>
+        <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    </PropertyGroup>
+
     <ItemGroup>
         <Resource Include="Mosaic.ico" />
         <Resource Include="Mosaic.png" />
