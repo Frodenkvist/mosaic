@@ -45,6 +45,15 @@ public partial class App : Application
         MainWindow = window;
         window.Show();
         await mainVm.InitializeAsync();
+
+        // Best-effort background update check (no-op unless this is an installed build with
+        // automatic checks enabled and the daily throttle elapsed). Never blocks startup.
+        var updates = _host.Services.GetRequiredService<IUpdateService>();
+        _ = Task.Run(async () =>
+        {
+            try { await updates.CheckForUpdateAsync(force: false); }
+            catch { /* best-effort: a failed check must never disrupt the app */ }
+        });
     }
 
     private static void ConfigureServices(IServiceCollection services, AppPaths paths)
@@ -65,6 +74,17 @@ public partial class App : Application
             c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<SteamWebApiClient>(c =>
             c.Timeout = TimeSpan.FromSeconds(30));
+
+        // UpdateService is a typed HttpClient (GitHub needs a User-Agent; the timeout is generous
+        // to cover the ~150 MB installer download). Exposed as a singleton so its UpdateAvailable
+        // event and LastResult are shared across view models.
+        services.AddHttpClient<UpdateService>(c =>
+        {
+            c.Timeout = TimeSpan.FromMinutes(10);
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("Mosaic");
+            c.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        });
+        services.AddSingleton<IUpdateService>(sp => sp.GetRequiredService<UpdateService>());
 
         // View models
         services.AddSingleton<MainViewModel>();

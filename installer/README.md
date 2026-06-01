@@ -25,7 +25,27 @@ This:
 1. cleans `installer\publish\` and `installer\dist\`,
 2. runs `dotnet publish -c Release -r win-x64 --self-contained true` into `installer\publish\`,
 3. compiles `Mosaic.iss` with Inno Setup,
-4. emits `installer\dist\MosaicSetup-<version>.exe`.
+4. emits `installer\dist\MosaicSetup-<version>.exe`,
+5. emits `installer\dist\MosaicSetup-<version>.exe.sha256` (the checksum the auto-updater verifies).
+
+## Publishing a release (for auto-update)
+
+The in-app auto-updater reads the **latest GitHub Release** of `Frodenkvist/mosaic`. To publish a
+version so installed clients can update to it:
+
+1. Bump `<Version>` in `Mosaic.csproj` and build the installer (`.\installer\package.ps1`).
+2. Create a GitHub Release whose **tag matches the version** (`v<version>`, e.g. `v1.2.0`).
+3. Upload **both** assets from `installer\dist\`: `MosaicSetup-<version>.exe` **and** its
+   `MosaicSetup-<version>.exe.sha256`. The updater requires the checksum and refuses to apply an
+   update it can't verify.
+
+```powershell
+.\installer\package.ps1 -Version 1.2.0
+gh release create v1.2.0 `
+    installer\dist\MosaicSetup-1.2.0.exe `
+    installer\dist\MosaicSetup-1.2.0.exe.sha256 `
+    --title "Mosaic 1.2.0" --notes "..."
+```
 
 ## Files
 
@@ -48,5 +68,12 @@ This:
 
 - The installer is currently **unsigned**, so Windows SmartScreen may warn about an unknown
   publisher. Code signing is a planned follow-up (add a `SignTool` step to `Mosaic.iss`).
-- Auto-update is not yet implemented; the per-user layout and stable `AppId` are chosen to
-  support it later.
+- **Auto-update** is implemented (see `Services\UpdateService.cs`). An installed Mosaic checks the
+  latest GitHub Release in the background (and on demand from Settings), and on the user's consent
+  downloads the new `MosaicSetup-<version>.exe`, **verifies it against the published `.sha256`**, then
+  runs it **silently** (`/SILENT /SUPPRESSMSGBOXES /NORESTART /RESTARTMOSAIC`) to upgrade in place and
+  relaunch. The `[Code]`/`[Run]` `WantRestartMosaic` gate in `Mosaic.iss` performs the relaunch only
+  when the updater passes `/RESTARTMOSAIC`. Update behavior is gated to **installed builds** (detected
+  via `unins000.exe` next to the executable); a `dotnet run` build never self-updates.
+- The checksum provides **integrity** (guards against corrupted/tampered downloads), not full
+  **authenticity** — that requires code signing, which is still the planned follow-up.

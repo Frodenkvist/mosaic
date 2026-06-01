@@ -10,8 +10,15 @@ public partial class SettingsViewModel : ObservableObject
     private readonly ISettingsService _settings;
     private readonly IDialogService _dialogs;
     private readonly SteamGridDbClient _client;
+    private readonly IUpdateService _updates;
+
+    // Suppresses the auto-update toggle's auto-save while Load() seeds it from settings.
+    private bool _suppressAutoUpdateSave;
 
     public ObservableCollection<string> ScanFolders { get; } = new();
+
+    /// <summary>The currently installed Mosaic version (e.g. "1.0.0").</summary>
+    public string CurrentVersion { get; } = AppEnvironment.CurrentVersion.ToString(3);
 
     [ObservableProperty]
     private string? _selectedFolder;
@@ -31,11 +38,21 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isTesting;
 
-    public SettingsViewModel(ISettingsService settings, IDialogService dialogs, SteamGridDbClient client)
+    [ObservableProperty]
+    private bool _automaticUpdatesEnabled = true;
+
+    [ObservableProperty]
+    private string? _updateStatusMessage;
+
+    [ObservableProperty]
+    private bool _isCheckingForUpdates;
+
+    public SettingsViewModel(ISettingsService settings, IDialogService dialogs, SteamGridDbClient client, IUpdateService updates)
     {
         _settings = settings;
         _dialogs = dialogs;
         _client = client;
+        _updates = updates;
         Load();
     }
 
@@ -46,8 +63,51 @@ public partial class SettingsViewModel : ObservableObject
             ScanFolders.Add(folder);
         ApiKey = _settings.Current.SteamGridDbApiKey;
         SteamWebApiKey = _settings.Current.SteamWebApiKey;
+
+        _suppressAutoUpdateSave = true;
+        AutomaticUpdatesEnabled = _settings.Current.AutomaticUpdatesEnabled;
+        _suppressAutoUpdateSave = false;
+
         StatusMessage = null;
         KeyStatusMessage = null;
+        UpdateStatusMessage = null;
+    }
+
+    /// <summary>The automatic-update toggle auto-saves immediately (no Save click needed).</summary>
+    partial void OnAutomaticUpdatesEnabledChanged(bool value)
+    {
+        if (_suppressAutoUpdateSave)
+            return;
+        _settings.Current.AutomaticUpdatesEnabled = value;
+        _ = _settings.SaveAsync();
+    }
+
+    [RelayCommand]
+    private async Task CheckForUpdates()
+    {
+        IsCheckingForUpdates = true;
+        UpdateStatusMessage = "Checking for updates…";
+        try
+        {
+            // force: true bypasses the daily throttle and the automatic-check preference; finding an
+            // update also raises UpdateAvailable, which drives the install prompt (in MainViewModel).
+            var result = await _updates.CheckForUpdateAsync(force: true);
+            UpdateStatusMessage = result.Status switch
+            {
+                UpdateCheckStatus.UpdateAvailable => $"Update available: Mosaic {result.Update!.Version.ToString(3)}.",
+                UpdateCheckStatus.UpToDate => "You’re up to date.",
+                UpdateCheckStatus.NotInstalledBuild => "Updates are managed by the installer (not an installed build).",
+                _ => result.Message ?? "Couldn’t check for updates.",
+            };
+        }
+        catch
+        {
+            UpdateStatusMessage = "Couldn’t check for updates.";
+        }
+        finally
+        {
+            IsCheckingForUpdates = false;
+        }
     }
 
     [RelayCommand]

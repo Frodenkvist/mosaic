@@ -65,10 +65,35 @@ Name: "{autodesktop}\Mosaic"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopi
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,Mosaic}"; Flags: nowait postinstall skipifsilent
+; When the in-app updater runs Setup silently with /RESTARTMOSAIC, relaunch Mosaic after the upgrade.
+; The finish-page launch above is skipifsilent, so it never fires during a silent update — this entry
+; (gated on the flag via WantRestartMosaic) is what brings the user back into the updated app.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WantRestartMosaic
 
 [Code]
 var
   DeleteUserData: Boolean;
+
+// True if the given switch (e.g. '/RESTARTMOSAIC') was passed on Setup's command line.
+function CmdLineParamExists(const Value: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), Value) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+// [Run] Check: relaunch Mosaic only when the updater explicitly requested it via /RESTARTMOSAIC,
+// so an ordinary interactive install never auto-launches unexpectedly.
+function WantRestartMosaic(): Boolean;
+begin
+  Result := CmdLineParamExists('/RESTARTMOSAIC');
+end;
 
 // Asked once before uninstalling: should we also wipe the user's data directory?
 // Defaults to NO (keep data) so reinstall/upgrade preserves the game library.

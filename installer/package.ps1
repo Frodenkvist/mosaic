@@ -83,3 +83,11 @@ if (-not (Test-Path -LiteralPath $output)) {
     throw "Expected installer not found at $output."
 }
 Write-Host "Created $output" -ForegroundColor Green
+
+# 6. Emit a SHA-256 checksum next to the installer. The in-app auto-updater downloads this alongside
+#    the installer and verifies the download before running it (builds are unsigned, so this is the
+#    integrity check). Format: "<lowercase-hash>  <filename>" (sha256sum-compatible).
+$hash       = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+$sha256Path = "$output.sha256"
+"$hash  MosaicSetup-$Version.exe" | Set-Content -LiteralPath $sha256Path -Encoding ascii -NoNewline
+Write-Host "Created $sha256Path" -ForegroundColor Green

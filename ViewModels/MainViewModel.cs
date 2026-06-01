@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,7 +12,12 @@ public partial class MainViewModel : ObservableObject
     public RecentlyPlayedViewModel RecentlyPlayed { get; }
     public SettingsViewModel Settings { get; }
 
+    private readonly IUpdateService _updates;
+    private readonly IDialogService _dialogs;
     private readonly DispatcherTimer _toastTimer;
+
+    // Guards against stacking multiple update prompts (e.g. a startup check and a manual one).
+    private bool _updatePromptShowing;
 
     [ObservableProperty]
     private ObservableObject _currentView;
@@ -36,11 +42,15 @@ public partial class MainViewModel : ObservableObject
         LibraryViewModel library,
         RecentlyPlayedViewModel recentlyPlayed,
         SettingsViewModel settings,
-        IAchievementService achievements)
+        IAchievementService achievements,
+        IUpdateService updates,
+        IDialogService dialogs)
     {
         Library = library;
         RecentlyPlayed = recentlyPlayed;
         Settings = settings;
+        _updates = updates;
+        _dialogs = dialogs;
         _currentView = library;
 
         _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
@@ -48,6 +58,38 @@ public partial class MainViewModel : ObservableObject
 
         // Raised on a background thread; marshal to the UI before touching observable state.
         achievements.AchievementUnlocked += (_, e) => App.RunOnUiAsync(() => ShowAchievementToastAsync(e));
+        _updates.UpdateAvailable += (_, info) => App.RunOnUiAsync(() => PromptForUpdateAsync(info));
+    }
+
+    /// <summary>
+    /// Asks the user whether to install an available update; on consent downloads, verifies, and
+    /// applies it, then closes the app so the installer can replace its files (it relaunches us).
+    /// </summary>
+    private async Task PromptForUpdateAsync(UpdateInfo info)
+    {
+        if (_updatePromptShowing)
+            return;
+        _updatePromptShowing = true;
+        try
+        {
+            var update = _dialogs.Confirm(
+                $"Mosaic {info.Version} is available (you have {AppEnvironment.CurrentVersion.ToString(3)}).\n\n" +
+                "Update now? Mosaic will close, install the update, and reopen.\n" +
+                "Choose No to be reminded later.",
+                "Update available");
+            if (!update)
+                return;
+
+            var result = await _updates.DownloadAndApplyAsync(info);
+            if (result.Success)
+                Application.Current?.Shutdown();
+            else
+                _dialogs.ShowMessage(result.Message ?? "The update could not be completed.", "Update");
+        }
+        finally
+        {
+            _updatePromptShowing = false;
+        }
     }
 
     /// <summary>Loads initial data once the window is shown.</summary>

@@ -11,4 +11,13 @@ public class AppSettings
 
     /// <summary>Steam Web API key; null/empty disables achievement schema auto-resolution.</summary>
     public string? SteamWebApiKey { get; set; }
+
+    /// <summary>
+    /// Whether Mosaic checks for new versions in the background at startup. Defaults to enabled;
+    /// an older settings.json that predates this field deserializes to this default (true).
+    /// </summary>
+    public bool AutomaticUpdatesEnabled { get; set; } = true;
+
+    /// <summary>UTC time of the last completed update check, used to throttle automatic checks.</summary>
+    public DateTime? LastUpdateCheckUtc { get; set; }
 }
