@@ -30,6 +30,10 @@ This:
 
 ## Publishing a release (for auto-update)
 
+> **Automated:** a push to `master` that bumps `<Version>` makes the Jenkins pipeline (`Jenkinsfile`)
+> build, test, package, and publish the release automatically. See [`docs/ci.md`](../docs/ci.md).
+> The manual steps below remain valid for a local/one-off release.
+
 The in-app auto-updater reads the **latest GitHub Release** of `Frodenkvist/mosaic`. To publish a
 version so installed clients can update to it:
 
