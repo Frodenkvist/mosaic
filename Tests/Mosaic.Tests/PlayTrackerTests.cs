@@ -54,6 +54,38 @@ public class PlayTrackerTests : IDisposable
     }
 
     [Fact]
+    public async Task LaunchAsync_ReturnsFalse_AndRecordsNothing_WhenExecutableCannotStart()
+    {
+        // A real, existing file that is NOT a valid executable: CreateProcess fails, and the
+        // suspended-launch path must surface that as a graceful false (not an exception),
+        // recording no session.
+        var bogus = Path.Combine(Path.GetTempPath(), $"mosaic_bogus_{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(bogus, "not an executable");
+        try
+        {
+            int gameId;
+            await using (var db = _factory.CreateDbContext())
+            {
+                var game = new Game { Name = "Bogus", ExecutablePath = bogus, DateAdded = DateTimeOffset.UtcNow };
+                db.Games.Add(game);
+                await db.SaveChangesAsync();
+                gameId = game.Id;
+            }
+
+            var tracker = new PlayTracker(_factory);
+            var launched = await tracker.LaunchAsync(gameId);
+
+            Assert.False(launched);
+            await using var verify = _factory.CreateDbContext();
+            Assert.Empty(verify.PlaySessions);
+        }
+        finally
+        {
+            try { File.Delete(bogus); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
     public async Task ReconcileOpenSessions_DiscardsSessionsLeftOpen()
     {
         await using (var db = _factory.CreateDbContext())

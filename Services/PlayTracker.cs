@@ -38,9 +38,24 @@ public class PlayTracker : IPlayTracker
         if (game is null || !File.Exists(game.ExecutablePath))
             return false;
 
-        var process = StartProcess(game);
-        if (process is null)
-            return false;
+        // Start the game SUSPENDED, assign it to the job WHILE suspended, then resume.
+        // This guarantees every descendant is captured by the job from its first
+        // instruction, closing the race where a launcher could spawn the real game and
+        // exit before a post-start assignment completes.
+        SuspendedProcess suspended;
+        try
+        {
+            suspended = SuspendedProcessLauncher.LaunchSuspended(
+                game.ExecutablePath, game.LaunchArguments, ResolveWorkingDirectory(game));
+        }
+        catch
+        {
+            return false; // the executable exists but could not be started; record nothing
+        }
+
+        var tracker = CreateTrackerAndAssign(suspended.Process);
+        suspended.Resume();
+        var process = suspended.Process;
 
         // Persist an open session immediately so it survives an unexpected close.
         var startedAt = DateTimeOffset.UtcNow;
@@ -49,19 +64,21 @@ public class PlayTracker : IPlayTracker
         SessionStarted?.Invoke(this, gameId);
 
         // Track to completion in the background; do not block the caller (the UI).
-        _ = Task.Run(() => TrackToCompletionAsync(game, process, sessionId));
+        _ = Task.Run(() => TrackToCompletionAsync(game, tracker, process, sessionId));
         return true;
     }
 
-    private async Task TrackToCompletionAsync(Game game, Process process, int sessionId)
+    private async Task TrackToCompletionAsync(Game game, JobObjectTracker? tracker, Process process, int sessionId)
     {
         var startedAt = DateTimeOffset.UtcNow;
         DateTimeOffset endedAt;
         try
         {
-            using var tracker = new JobObjectTracker();
-            TryAssign(tracker, process);
-            var treeExit = tracker.WaitForTreeExitAsync();
+            // Whole-tree exit via the job; if the job could not be created/assigned, fall
+            // back to the launched process's own lifetime.
+            var treeExit = tracker is not null
+                ? tracker.WaitForTreeExitAsync()
+                : process.WaitForExitAsync();
 
             if (string.IsNullOrWhiteSpace(game.RealExecutableName))
             {
@@ -83,6 +100,8 @@ public class PlayTracker : IPlayTracker
         finally
         {
             _runningSince.TryRemove(game.Id, out _);
+            tracker?.Dispose();
+            process.Dispose();
         }
 
         await CloseSessionAsync(sessionId, startedAt, endedAt);
@@ -155,30 +174,30 @@ public class PlayTracker : IPlayTracker
         await db.SaveChangesAsync();
     }
 
-    private static Process? StartProcess(Game game)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = game.ExecutablePath,
-            Arguments = game.LaunchArguments ?? string.Empty,
-            WorkingDirectory = string.IsNullOrWhiteSpace(game.WorkingDirectory)
-                ? Path.GetDirectoryName(game.ExecutablePath) ?? string.Empty
-                : game.WorkingDirectory,
-            UseShellExecute = false,
-        };
-        return Process.Start(psi);
-    }
+    private static string ResolveWorkingDirectory(Game game) =>
+        string.IsNullOrWhiteSpace(game.WorkingDirectory)
+            ? Path.GetDirectoryName(game.ExecutablePath) ?? string.Empty
+            : game.WorkingDirectory;
 
-    private static void TryAssign(JobObjectTracker tracker, Process process)
+    /// <summary>
+    /// Creates the job tracker and assigns the (suspended) process to it. Returns null if
+    /// the job could not be created or the assignment failed (rare): the session is then
+    /// still measured via the real-exe poller or the process's own lifetime — assignment
+    /// failure never aborts the session.
+    /// </summary>
+    private static JobObjectTracker? CreateTrackerAndAssign(Process process)
     {
+        JobObjectTracker? tracker = null;
         try
         {
+            tracker = new JobObjectTracker();
             tracker.Assign(process);
+            return tracker;
         }
         catch
         {
-            // If assignment fails (rare), we still measure via the real-exe poller
-            // or the process's own lifetime; do not abort the session.
+            tracker?.Dispose();
+            return null;
         }
     }
 
