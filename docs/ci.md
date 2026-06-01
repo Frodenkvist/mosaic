@@ -94,6 +94,11 @@ Create a **Pipeline** (or **Multibranch Pipeline**) job:
 
 ## Troubleshooting
 
+- **`Invalid option type …` / `No such DSL method …` at startup:** the pipeline targets a minimal
+  Jenkins — it uses only core Pipeline steps plus the GitHub plugin (for the push trigger). It does
+  **not** require the Timestamper or PowerShell-step plugins (the version is parsed with the core
+  `readFile` step and `package.ps1` is invoked via `bat`). If you add steps from other plugins,
+  install those plugins too.
 - **Missing toolchain** (e.g. `ISCC.exe` not found): the Package stage fails fast with guidance and
   **no partial release is published**. Install the missing tool on `munin` and re-run.
 - **Partial/bad release:** delete the GitHub Release and its `v<version>` tag; the idempotent gate

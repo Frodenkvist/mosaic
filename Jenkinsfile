@@ -14,7 +14,6 @@ pipeline {
 
     options {
         disableConcurrentBuilds()   // avoid two runs racing on the same release tag
-        timestamps()
         skipDefaultCheckout()       // we check out explicitly to capture the commit SHA
     }
 
@@ -75,15 +74,15 @@ pipeline {
             when { expression { env.IS_MASTER == 'true' } }
             steps {
                 script {
-                    // <Version> in Mosaic.csproj is the single source of truth (the same node
-                    // installer\package.ps1 reads).
-                    env.MOSAIC_VERSION = powershell(returnStdout: true, script: '''
-                        $ErrorActionPreference = 'Stop'
-                        $xml  = [xml](Get-Content -LiteralPath 'Mosaic.csproj')
-                        $node = $xml.SelectSingleNode('//PropertyGroup/Version')
-                        if (-not $node -or -not $node.InnerText.Trim()) { throw 'Could not read <Version> from Mosaic.csproj' }
-                        Write-Output $node.InnerText.Trim()
-                    ''').trim()
+                    // <Version> in Mosaic.csproj is the single source of truth (the same value
+                    // installer\package.ps1 reads). Parsed in-process with the core readFile step
+                    // (string indexOf/substring — no regex Matcher, which is not CPS-serializable)
+                    // so the pipeline needs no PowerShell-step plugin.
+                    def csproj = readFile('Mosaic.csproj')
+                    def open  = csproj.indexOf('<Version>')
+                    def close = csproj.indexOf('</Version>')
+                    if (open < 0 || close < 0) { error 'Could not read <Version> from Mosaic.csproj' }
+                    env.MOSAIC_VERSION = csproj.substring(open + '<Version>'.length(), close).trim()
 
                     // Idempotent gate: release only when no GitHub Release for this version exists.
                     // `gh release view` exits non-zero when the release is absent.
@@ -102,8 +101,10 @@ pipeline {
                 // Reuses the existing packaging script verbatim: self-contained win-x64 publish ->
                 // Inno Setup -> MosaicSetup-<version>.exe + .sha256. It fails fast with clear
                 // guidance if the installer toolchain (ISCC.exe) is missing. Passing -Version
-                // guarantees the asset name matches what the Publish stage uploads.
-                powershell ".\\installer\\package.ps1 -Version ${env.MOSAIC_VERSION}"
+                // guarantees the asset name matches what the Publish stage uploads. Invoked via
+                // `bat` (core) so no PowerShell-step plugin is required; package.ps1's non-zero exit
+                // (missing toolchain / failed publish) propagates as a cmd errorlevel and fails the stage.
+                bat "powershell -NoProfile -ExecutionPolicy Bypass -File installer\\package.ps1 -Version ${env.MOSAIC_VERSION}"
             }
         }
 
