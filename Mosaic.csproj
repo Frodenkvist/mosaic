@@ -9,12 +9,13 @@
         <ApplicationIcon>Mosaic.ico</ApplicationIcon>
     </PropertyGroup>
 
-    <!-- Product / version metadata. <Version> is the single source of truth the installer
-         packaging script (installer\package.ps1) reads to name and stamp MosaicSetup-<version>.exe. -->
+    <!-- Product / version metadata. The Version property below is the single source of truth:
+         installer\package.ps1 reads it to name MosaicSetup-<version>.exe and the Jenkins pipeline
+         reads it for the release tag. AssemblyVersion and FileVersion are intentionally NOT set —
+         the SDK derives them from Version, so the running app's reported version (which the updater
+         compares against the latest release tag) tracks this value. Bump only this one number. -->
     <PropertyGroup>
         <Version>1.0.1</Version>
-        <AssemblyVersion>1.0.1.0</AssemblyVersion>
-        <FileVersion>1.0.1.0</FileVersion>
         <Product>Mosaic</Product>
         <Company>Mosaic</Company>
         <Authors>Mosaic</Authors>
