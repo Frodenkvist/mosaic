@@ -76,11 +76,13 @@ pipeline {
                 script {
                     // <Version> in Mosaic.csproj is the single source of truth (the same value
                     // installer\package.ps1 reads). Parsed in-process with the core readFile step
-                    // (string indexOf/substring — no regex Matcher, which is not CPS-serializable)
-                    // so the pipeline needs no PowerShell-step plugin.
+                    // (string ops — no regex Matcher, which is not CPS-serializable) so the pipeline
+                    // needs no PowerShell-step plugin. Anchor on the (unique) closing </Version> and
+                    // take the nearest preceding <Version>, so the literal "<Version>" in the csproj
+                    // comment above the real element is not mistaken for the value.
                     def csproj = readFile('Mosaic.csproj')
-                    def open  = csproj.indexOf('<Version>')
                     def close = csproj.indexOf('</Version>')
+                    def open  = close >= 0 ? csproj.lastIndexOf('<Version>', close) : -1
                     if (open < 0 || close < 0) { error 'Could not read <Version> from Mosaic.csproj' }
                     env.MOSAIC_VERSION = csproj.substring(open + '<Version>'.length(), close).trim()
 
