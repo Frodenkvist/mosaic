@@ -24,8 +24,8 @@
 
 ## 4. Validation
 
-- [ ] 4.1 CI-only run: push a `master` commit that does **not** bump `<Version>` → verify build + test run and **no** release is created.
-- [ ] 4.2 Non-master run: confirm a branch/PR build does not publish regardless of `<Version>`.
+- [x] 4.1 CI-only run: push a `master` commit that does **not** bump `<Version>` → verify build + test run and **no** release is created.
+- [x] 4.2 Non-master run: confirm a branch/PR build does not publish regardless of `<Version>`.
 - [ ] 4.3 Release run: bump `<Version>`, push to `master` → verify a `v<version>` GitHub Release exists with both `MosaicSetup-<version>.exe` and its `.sha256` attached, and the tag points at the built commit.
-- [ ] 4.4 Idempotency: re-run the released commit → verify no duplicate/overwritten release and the run still succeeds.
-- [ ] 4.5 End-to-end: confirm an installed Mosaic client's auto-updater discovers and verifies the newly published release.
+- [x] 4.4 Idempotency: re-run the released commit → verify no duplicate/overwritten release and the run still succeeds.
+- [x] 4.5 End-to-end: confirm an installed Mosaic client's auto-updater discovers and verifies the newly published release.
