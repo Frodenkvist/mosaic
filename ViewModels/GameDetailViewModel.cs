@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mosaic.Models;
@@ -10,10 +11,12 @@ public partial class GameDetailViewModel : ObservableObject
     private readonly IGameLibrary _library;
     private readonly IPlayTracker _tracker;
     private readonly IArtworkService _artwork;
+    private readonly IAchievementService _achievements;
     private readonly IDialogService _dialogs;
     private readonly ISettingsService _settings;
 
     private int _gameId;
+    private bool _loadingAchievementSettings;
 
     [ObservableProperty] private string _name = string.Empty;
     [ObservableProperty] private string _executablePath = string.Empty;
@@ -26,6 +29,44 @@ public partial class GameDetailViewModel : ObservableObject
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private string? _statusMessage;
 
+    // --- Achievements ---
+    public ObservableCollection<AchievementItemViewModel> Achievements { get; } = new();
+
+    public AchievementSource[] AchievementSourceOptions { get; } =
+        { AchievementSource.Auto, AchievementSource.Manual, AchievementSource.Disabled };
+
+    [ObservableProperty] private string? _steamAppIdText;
+    [ObservableProperty] private bool _achievementTrackingEnabled = true;
+    [ObservableProperty] private AchievementSource _achievementSource = AchievementSource.Auto;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAchievements))]
+    private string _achievementSummary = "No achievements yet.";
+
+    [ObservableProperty] private string? _achievementStatus;
+    [ObservableProperty] private string _newAchievementName = string.Empty;
+
+    /// <summary>
+    /// True while an achievement action is running. Gates every achievement-mutating command so a
+    /// second one can't start (and overlap an in-flight schema fetch / unlock scan) until it finishes.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(FindAppIdCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyAppIdCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UnlinkCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshAchievementsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanUnlocksCommand))]
+    [NotifyCanExecuteChangedFor(nameof(AddManualAchievementCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleAchievementCommand))]
+    private bool _isAchievementBusy;
+
+    private bool CanRunAchievementAction() => !IsAchievementBusy;
+
+    public bool HasAchievements => Achievements.Count > 0;
+
+    /// <summary>True when achievement schemas can be auto-resolved (a Steam Web API key is set).</summary>
+    public bool AchievementAutoAvailable => _achievements.IsAutoResolutionAvailable;
+
     /// <summary>Raised when the window hosting this VM should close.</summary>
     public event Action? CloseRequested;
 
@@ -33,12 +74,14 @@ public partial class GameDetailViewModel : ObservableObject
         IGameLibrary library,
         IPlayTracker tracker,
         IArtworkService artwork,
+        IAchievementService achievements,
         IDialogService dialogs,
         ISettingsService settings)
     {
         _library = library;
         _tracker = tracker;
         _artwork = artwork;
+        _achievements = achievements;
         _dialogs = dialogs;
         _settings = settings;
     }
@@ -69,6 +112,207 @@ public partial class GameDetailViewModel : ObservableObject
         PlayTimeDisplay = DisplayFormat.PlayTime(stats);
         LastPlayedDisplay = DisplayFormat.LastPlayed(stats);
         IsRunning = _tracker.IsRunning(_gameId);
+
+        _loadingAchievementSettings = true;
+        SteamAppIdText = game.SteamAppId?.ToString();
+        AchievementTrackingEnabled = game.AchievementTrackingEnabled;
+        AchievementSource = game.AchievementSource;
+        _loadingAchievementSettings = false;
+
+        await LoadAchievementsAsync();
+    }
+
+    private async Task LoadAchievementsAsync()
+    {
+        var items = await _achievements.GetAchievementsAsync(_gameId);
+        Achievements.Clear();
+        foreach (var a in items)
+            Achievements.Add(new AchievementItemViewModel(a));
+
+        var unlocked = items.Count(a => a.IsUnlocked);
+        AchievementSummary = items.Count == 0
+            ? "No achievements yet. Link a Steam App ID or add one manually."
+            : $"{unlocked} / {items.Count} unlocked";
+        OnPropertyChanged(nameof(HasAchievements));
+        OnPropertyChanged(nameof(AchievementAutoAvailable));
+    }
+
+    // Apply tracking config changes immediately (but ignore the initial load assignments).
+    partial void OnAchievementTrackingEnabledChanged(bool value) => _ = ApplyAchievementSourceAsync();
+    partial void OnAchievementSourceChanged(AchievementSource value) => _ = ApplyAchievementSourceAsync();
+
+    private async Task ApplyAchievementSourceAsync()
+    {
+        if (_loadingAchievementSettings)
+            return;
+        await _achievements.SetSourceAsync(_gameId, AchievementTrackingEnabled, AchievementSource);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunAchievementAction))]
+    private async Task FindAppId()
+    {
+        IsAchievementBusy = true;
+        try
+        {
+            AchievementStatus = "Searching Steam…";
+            var candidates = await _achievements.SuggestAppsAsync(_gameId);
+            if (candidates.Count == 0)
+            {
+                AchievementStatus = "No Steam match found. Enter an App ID manually.";
+                return;
+            }
+
+            // Confirm candidates best-first; the user accepts one or falls back to manual entry.
+            foreach (var app in candidates.Take(3))
+            {
+                if (_dialogs.Confirm($"Link “{Name}” to “{app.Name}” (App ID {app.AppId})?", "Link achievements"))
+                {
+                    SteamAppIdText = app.AppId.ToString();
+                    await LinkAppIdAsync(app.AppId);
+                    return;
+                }
+            }
+            AchievementStatus = "No match accepted. Enter an App ID manually if you know it.";
+        }
+        finally
+        {
+            IsAchievementBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunAchievementAction))]
+    private async Task ApplyAppId()
+    {
+        if (!int.TryParse(SteamAppIdText?.Trim(), out var appId) || appId <= 0)
+        {
+            AchievementStatus = "Enter a numeric Steam App ID.";
+            return;
+        }
+        IsAchievementBusy = true;
+        try
+        {
+            await LinkAppIdAsync(appId);
+        }
+        finally
+        {
+            IsAchievementBusy = false;
+        }
+    }
+
+    private async Task LinkAppIdAsync(int appId)
+    {
+        if (!_achievements.IsAutoResolutionAvailable)
+        {
+            AchievementStatus = "Add a Steam Web API key in Settings to fetch the achievement list.";
+            // Still persist the link so it resolves once a key is added.
+        }
+        else
+        {
+            AchievementStatus = "Fetching achievements from Steam…";
+        }
+        await _achievements.LinkAppIdAsync(_gameId, appId);
+        await LoadAchievementsAsync();
+        AchievementStatus = Achievements.Count > 0
+            ? $"Linked. {AchievementSummary}."
+            : _achievements.IsAutoResolutionAvailable
+                ? "Linked, but this App ID has no achievements."
+                : "Linked. Add a Steam Web API key in Settings to fetch the list.";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunAchievementAction))]
+    private async Task Unlink()
+    {
+        IsAchievementBusy = true;
+        try
+        {
+            await _achievements.SetUnlinkedAsync(_gameId);
+            SteamAppIdText = null;
+            await LoadAchievementsAsync();
+            AchievementStatus = "Unlinked from Steam achievements.";
+        }
+        finally
+        {
+            IsAchievementBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunAchievementAction))]
+    private async Task RefreshAchievements()
+    {
+        if (!_achievements.IsAutoResolutionAvailable)
+        {
+            AchievementStatus = "Add a Steam Web API key in Settings to fetch the achievement list.";
+            return;
+        }
+        IsAchievementBusy = true;
+        try
+        {
+            AchievementStatus = "Refreshing achievements…";
+            await _achievements.RefreshAsync(_gameId);
+            await LoadAchievementsAsync();
+            AchievementStatus = "Achievements refreshed.";
+        }
+        finally
+        {
+            IsAchievementBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunAchievementAction))]
+    private async Task ScanUnlocks()
+    {
+        IsAchievementBusy = true;
+        try
+        {
+            AchievementStatus = "Scanning for unlocks…";
+            var newly = await _achievements.ScanUnlocksAsync(_gameId);
+            await LoadAchievementsAsync();
+            AchievementStatus = newly.Count > 0
+                ? $"Found {newly.Count} new unlock{(newly.Count == 1 ? "" : "s")}."
+                : "No new unlocks found.";
+        }
+        finally
+        {
+            IsAchievementBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunAchievementAction))]
+    private async Task ToggleAchievement(AchievementItemViewModel? item)
+    {
+        if (item is null)
+            return;
+        IsAchievementBusy = true;
+        try
+        {
+            var willUnlock = !item.IsUnlocked;
+            await _achievements.SetUnlockedAsync(_gameId, item.Id, willUnlock);
+            item.IsUnlocked = willUnlock;
+            item.UnlockedAt = willUnlock ? DateTimeOffset.UtcNow : null;
+            await LoadAchievementsAsync();
+        }
+        finally
+        {
+            IsAchievementBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunAchievementAction))]
+    private async Task AddManualAchievement()
+    {
+        if (string.IsNullOrWhiteSpace(NewAchievementName))
+            return;
+        IsAchievementBusy = true;
+        try
+        {
+            await _achievements.AddManualAchievementAsync(_gameId, NewAchievementName.Trim());
+            NewAchievementName = string.Empty;
+            await LoadAchievementsAsync();
+        }
+        finally
+        {
+            IsAchievementBusy = false;
+        }
     }
 
     [RelayCommand]

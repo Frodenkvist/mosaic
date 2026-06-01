@@ -10,7 +10,12 @@ public record GameStats(TimeSpan TotalPlayTime, DateTimeOffset? LastPlayed, int 
 }
 
 /// <summary>A game plus its derived stats and cover-art path, for list/grid display.</summary>
-public record GameListItem(Game Game, GameStats Stats, string? CoverPath);
+public record GameListItem(
+    Game Game,
+    GameStats Stats,
+    string? CoverPath,
+    int AchievementsUnlocked = 0,
+    int AchievementsTotal = 0);
 
 /// <summary>Request to add a game manually.</summary>
 public record AddGameRequest(
@@ -18,7 +23,8 @@ public record AddGameRequest(
     string ExecutablePath,
     string? LaunchArguments = null,
     string? WorkingDirectory = null,
-    string? RealExecutableName = null);
+    string? RealExecutableName = null,
+    int? SteamAppId = null);
 
 /// <summary>A candidate executable found during a folder scan, awaiting user confirmation.</summary>
 public record ScanCandidate(string SuggestedName, string ExecutablePath);

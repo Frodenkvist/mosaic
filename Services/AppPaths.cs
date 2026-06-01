@@ -9,6 +9,7 @@ public class AppPaths
 {
     public string RootDirectory { get; }
     public string ArtworkDirectory { get; }
+    public string AchievementsDirectory { get; }
     public string DatabasePath { get; }
     public string SettingsPath { get; }
 
@@ -23,15 +24,17 @@ public class AppPaths
     {
         RootDirectory = rootDirectory;
         ArtworkDirectory = Path.Combine(RootDirectory, "artwork");
+        AchievementsDirectory = Path.Combine(RootDirectory, "achievements");
         DatabasePath = Path.Combine(RootDirectory, "mosaic.db");
         SettingsPath = Path.Combine(RootDirectory, "settings.json");
     }
 
-    /// <summary>Creates the data and artwork directories if they do not yet exist.</summary>
+    /// <summary>Creates the data, artwork and achievement directories if they do not yet exist.</summary>
     public void EnsureCreated()
     {
         Directory.CreateDirectory(RootDirectory);
         Directory.CreateDirectory(ArtworkDirectory);
+        Directory.CreateDirectory(AchievementsDirectory);
     }
 
     /// <summary>True when the given path lives inside Mosaic's own data directory.</summary>

@@ -16,6 +16,7 @@ public abstract partial class GameCollectionViewModel : ObservableObject
     protected readonly IPlayTracker Tracker;
     protected readonly IDialogService Dialogs;
     protected readonly IArtworkService Artwork;
+    private readonly IAchievementService _achievements;
 
     private readonly DispatcherTimer _timer;
 
@@ -30,12 +31,14 @@ public abstract partial class GameCollectionViewModel : ObservableObject
     private bool _isEmpty;
 
     protected GameCollectionViewModel(
-        IGameLibrary library, IPlayTracker tracker, IDialogService dialogs, IArtworkService artwork)
+        IGameLibrary library, IPlayTracker tracker, IDialogService dialogs,
+        IArtworkService artwork, IAchievementService achievements)
     {
         Library = library;
         Tracker = tracker;
         Dialogs = dialogs;
         Artwork = artwork;
+        _achievements = achievements;
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) => TickRunning();
@@ -49,6 +52,19 @@ public abstract partial class GameCollectionViewModel : ObservableObject
         Artwork.ArtworkFetchStarted += (_, id) => App.RunOnUiAsync(() => OnFetchStatusChangedAsync(id, ArtworkFetchStatus.Fetching));
         Artwork.ArtworkFetchFailed += (_, id) => App.RunOnUiAsync(() => OnFetchStatusChangedAsync(id, ArtworkFetchStatus.Failed));
         Artwork.ArtworkUpdated += (_, id) => App.RunOnUiAsync(() => OnArtworkUpdatedAsync(id));
+
+        // Achievement progress changes (resolve, manual mark, live unlock) update just the affected tile.
+        _achievements.AchievementsChanged += (_, id) => App.RunOnUiAsync(() => OnAchievementsChangedAsync(id));
+    }
+
+    private async Task OnAchievementsChangedAsync(int gameId)
+    {
+        var tile = Games.FirstOrDefault(t => t.GameId == gameId);
+        if (tile is null)
+            return;
+        var (unlocked, total) = await _achievements.GetProgressAsync(gameId);
+        tile.AchievementsUnlocked = unlocked;
+        tile.AchievementsTotal = total;
     }
 
     /// <summary>Loads the items this collection should display.</summary>

@@ -49,7 +49,8 @@ public class GameLibrary : IGameLibrary
             .ToListAsync();
 
         var statsByGame = await ComputeStatsAsync(db);
-        return games.Select(g => ToListItem(g, statsByGame)).ToList();
+        var achievementsByGame = await ComputeAchievementCountsAsync(db);
+        return games.Select(g => ToListItem(g, statsByGame, achievementsByGame)).ToList();
     }
 
     public async Task<IReadOnlyList<GameListItem>> GetRecentlyPlayedAsync()
@@ -60,8 +61,9 @@ public class GameLibrary : IGameLibrary
             .ToListAsync();
 
         var statsByGame = await ComputeStatsAsync(db);
+        var achievementsByGame = await ComputeAchievementCountsAsync(db);
         return games
-            .Select(g => ToListItem(g, statsByGame))
+            .Select(g => ToListItem(g, statsByGame, achievementsByGame))
             .Where(i => i.Stats.HasBeenPlayed)
             .OrderByDescending(i => i.Stats.LastPlayed)
             .ToList();
@@ -109,6 +111,7 @@ public class GameLibrary : IGameLibrary
             LaunchArguments = NullIfBlank(request.LaunchArguments),
             WorkingDirectory = NullIfBlank(request.WorkingDirectory),
             RealExecutableName = NullIfBlank(request.RealExecutableName),
+            SteamAppId = request.SteamAppId is > 0 ? request.SteamAppId : null,
             DateAdded = DateTimeOffset.UtcNow,
         };
 
@@ -146,17 +149,21 @@ public class GameLibrary : IGameLibrary
         await using var db = await _contextFactory.CreateDbContextAsync();
         var game = await db.Games
             .Include(g => g.Artwork)
+            .Include(g => g.Achievements)
             .FirstOrDefaultAsync(g => g.Id == gameId);
         if (game is null)
             return;
 
-        // Delete cached artwork files (only those inside our own data directory).
+        // Delete cached artwork and achievement-icon files (only those inside our own data directory).
         foreach (var art in game.Artwork)
-        {
             TryDeleteCachedFile(art.LocalPath);
+        foreach (var ach in game.Achievements)
+        {
+            TryDeleteCachedFile(ach.IconUnlockedPath);
+            TryDeleteCachedFile(ach.IconLockedPath);
         }
 
-        db.Games.Remove(game); // sessions & artwork rows cascade-delete
+        db.Games.Remove(game); // sessions, artwork & achievement rows cascade-delete
         await db.SaveChangesAsync();
     }
 
@@ -307,14 +314,30 @@ public class GameLibrary : IGameLibrary
                     g.Count()));
     }
 
-    private static GameListItem ToListItem(Game game, Dictionary<int, GameStats> statsByGame)
+    /// <summary>Per-game (unlocked, total) achievement counts, for the list/grid progress indicator.</summary>
+    private static async Task<Dictionary<int, (int Unlocked, int Total)>> ComputeAchievementCountsAsync(MosaicDbContext db)
+    {
+        var rows = await db.Achievements.AsNoTracking()
+            .Select(a => new { a.GameId, Unlocked = a.UnlockedAt != null })
+            .ToListAsync();
+
+        return rows
+            .GroupBy(a => a.GameId)
+            .ToDictionary(g => g.Key, g => (g.Count(a => a.Unlocked), g.Count()));
+    }
+
+    private static GameListItem ToListItem(
+        Game game,
+        Dictionary<int, GameStats> statsByGame,
+        Dictionary<int, (int Unlocked, int Total)> achievementsByGame)
     {
         var stats = statsByGame.TryGetValue(game.Id, out var s) ? s : GameStats.Empty;
         var cover = game.Artwork.FirstOrDefault(a => a.Kind == ArtworkKind.Grid)?.LocalPath;
-        return new GameListItem(game, stats, cover);
+        var (unlocked, total) = achievementsByGame.TryGetValue(game.Id, out var a) ? a : (0, 0);
+        return new GameListItem(game, stats, cover, unlocked, total);
     }
 
-    private void TryDeleteCachedFile(string path)
+    private void TryDeleteCachedFile(string? path)
     {
         try
         {

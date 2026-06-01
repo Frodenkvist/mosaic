@@ -20,6 +20,9 @@ public partial class SettingsViewModel : ObservableObject
     private string? _apiKey;
 
     [ObservableProperty]
+    private string? _steamWebApiKey;
+
+    [ObservableProperty]
     private string? _statusMessage;
 
     [ObservableProperty]
@@ -42,6 +45,7 @@ public partial class SettingsViewModel : ObservableObject
         foreach (var folder in _settings.Current.ScanFolders)
             ScanFolders.Add(folder);
         ApiKey = _settings.Current.SteamGridDbApiKey;
+        SteamWebApiKey = _settings.Current.SteamWebApiKey;
         StatusMessage = null;
         KeyStatusMessage = null;
     }
@@ -107,6 +111,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         _settings.Current.ScanFolders = ScanFolders.ToList();
         _settings.Current.SteamGridDbApiKey = string.IsNullOrWhiteSpace(ApiKey) ? null : ApiKey.Trim();
+        _settings.Current.SteamWebApiKey = string.IsNullOrWhiteSpace(SteamWebApiKey) ? null : SteamWebApiKey.Trim();
         await _settings.SaveAsync();
         StatusMessage = "Settings saved.";
     }

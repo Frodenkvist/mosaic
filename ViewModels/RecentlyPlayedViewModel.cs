@@ -5,8 +5,9 @@ namespace Mosaic.ViewModels;
 public partial class RecentlyPlayedViewModel : GameCollectionViewModel
 {
     public RecentlyPlayedViewModel(
-        IGameLibrary library, IPlayTracker tracker, IDialogService dialogs, IArtworkService artwork)
-        : base(library, tracker, dialogs, artwork)
+        IGameLibrary library, IPlayTracker tracker, IDialogService dialogs,
+        IArtworkService artwork, IAchievementService achievements)
+        : base(library, tracker, dialogs, artwork, achievements)
     {
     }
 

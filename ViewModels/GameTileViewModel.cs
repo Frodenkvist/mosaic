@@ -11,6 +11,8 @@ public partial class GameTileViewModel : ObservableObject
     public GameTileViewModel(GameListItem item)
     {
         _item = item;
+        _achievementsUnlocked = item.AchievementsUnlocked;
+        _achievementsTotal = item.AchievementsTotal;
     }
 
     public int GameId => _item.Game.Id;
@@ -19,6 +21,20 @@ public partial class GameTileViewModel : ObservableObject
     public bool HasCover => !string.IsNullOrWhiteSpace(_item.CoverPath);
     public string PlayTimeDisplay => DisplayFormat.PlayTime(_item.Stats);
     public string LastPlayedDisplay => DisplayFormat.LastPlayed(_item.Stats);
+
+    /// <summary>Live achievement progress; updated in place when the achievement service signals a change.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAchievements))]
+    [NotifyPropertyChangedFor(nameof(AchievementProgressDisplay))]
+    private int _achievementsUnlocked;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAchievements))]
+    [NotifyPropertyChangedFor(nameof(AchievementProgressDisplay))]
+    private int _achievementsTotal;
+
+    public bool HasAchievements => AchievementsTotal > 0;
+    public string AchievementProgressDisplay => $"🏆 {AchievementsUnlocked}/{AchievementsTotal}";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanLaunch))]

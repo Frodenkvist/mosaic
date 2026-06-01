@@ -51,6 +51,19 @@
                            HorizontalAlignment="Right" VerticalAlignment="Center" />
             </DockPanel>
 
+            <!-- Steam Web API key -->
+            <TextBlock Text="Steam Web API key" Foreground="{StaticResource TextPrimary}" FontSize="16"
+                       FontWeight="SemiBold" Margin="0,22,0,0" />
+            <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,2,0,8" TextWrapping="Wrap"
+                       Text="Used to auto-resolve a game's achievement list from Steam. Leave blank to disable achievement auto-resolution (you can still mark achievements manually). Get a free key at steamcommunity.com/dev/apikey." />
+            <Grid>
+                <PasswordBox x:Name="SteamKeyBox" Visibility="Visible" />
+                <TextBox x:Name="SteamKeyText" Text="{Binding SteamWebApiKey, UpdateSourceTrigger=PropertyChanged}"
+                         Visibility="Collapsed" />
+            </Grid>
+            <CheckBox x:Name="ShowSteamKey" Content="Show key" Margin="0,8,0,0"
+                      Checked="ShowSteamKey_Toggled" Unchecked="ShowSteamKey_Toggled" />
+
             <StackPanel Orientation="Horizontal" Margin="0,24,0,0">
                 <Button Content="Save settings" Style="{StaticResource AccentButton}" Command="{Binding SaveCommand}"
                         Padding="18,9" />

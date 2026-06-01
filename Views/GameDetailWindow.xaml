@@ -10,7 +10,12 @@
         Icon="/Mosaic.ico" WindowStartupLocation="CenterOwner"
         Style="{StaticResource MosaicWindowStyle}"
         d:DataContext="{d:DesignInstance Type=vm:GameDetailViewModel}">
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <Grid Margin="20">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="270" />
@@ -65,13 +70,13 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Text="{Binding Name}" Foreground="{StaticResource TextPrimary}"
                        FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,0,14" />
 
-            <Expander Grid.Row="1" Header="Edit details" IsExpanded="True"
+          <StackPanel Grid.Row="1">
+            <Expander Header="Edit details" IsExpanded="True"
                       Foreground="{StaticResource TextSecondary}" VerticalAlignment="Top">
                 <StackPanel Margin="0,8,0,0">
                     <StackPanel.Resources>
@@ -107,9 +112,118 @@
                 </StackPanel>
             </Expander>
 
-            <DockPanel Grid.Row="2" Margin="0,16,0,0">
+            <Expander Header="Achievements" IsExpanded="True" Margin="0,14,0,0"
+                      Foreground="{StaticResource TextSecondary}">
+                <StackPanel Margin="0,8,0,0">
+                    <TextBlock Text="{Binding AchievementSummary}" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextPrimary}" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Find on Steam" Command="{Binding FindAppIdCommand}" Margin="0,0,6,0" />
+                        <Button Content="Refresh" Command="{Binding RefreshAchievementsCommand}" Margin="0,0,6,0"
+                                ToolTip="Re-fetch the achievement list from Steam" />
+                        <Button Content="Scan unlocks" Command="{Binding ScanUnlocksCommand}"
+                                ToolTip="Re-read emulator files for newly unlocked achievements" />
+                    </StackPanel>
+
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Steam App ID" Foreground="{StaticResource TextSecondary}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" FontSize="13" />
+                        <TextBox Grid.Column="1" Text="{Binding SteamAppIdText, UpdateSourceTrigger=PropertyChanged}"
+                                 VerticalAlignment="Center" />
+                        <Button Grid.Column="2" Content="Link" Command="{Binding ApplyAppIdCommand}" Margin="8,0,0,0" />
+                        <Button Grid.Column="3" Content="Unlink" Command="{Binding UnlinkCommand}" Margin="6,0,0,0" />
+                    </Grid>
+
+                    <DockPanel Margin="0,10,0,0">
+                        <CheckBox DockPanel.Dock="Left" Content="Track achievements" VerticalAlignment="Center"
+                                  IsChecked="{Binding AchievementTrackingEnabled}" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <TextBlock Text="Mode" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"
+                                       Margin="0,0,8,0" FontSize="13" />
+                            <ComboBox Width="130" ItemsSource="{Binding AchievementSourceOptions}"
+                                      SelectedItem="{Binding AchievementSource}" />
+                        </StackPanel>
+                    </DockPanel>
+
+                    <TextBlock Text="{Binding AchievementStatus}" Foreground="{StaticResource TextMuted}"
+                               FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+
+                    <!-- Achievement list -->
+                    <ItemsControl ItemsSource="{Binding Achievements}" Margin="0,10,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:AchievementItemViewModel}">
+                                <Border Background="{StaticResource Surface}" CornerRadius="8" Padding="10,8" Margin="0,0,0,6">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Width="40" Height="40" CornerRadius="6"
+                                                Background="{StaticResource SurfaceAlt}" ClipToBounds="True"
+                                                VerticalAlignment="Center">
+                                            <Image Source="{Binding IconPath, Converter={StaticResource PathToImage}}"
+                                                   Stretch="UniformToFill" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource TextPrimary}"
+                                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextSecondary}"
+                                                       FontSize="12" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding UnlockedAtDisplay}" Foreground="{StaticResource Accent}"
+                                                       FontSize="11" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" VerticalAlignment="Center"
+                                                Command="{Binding DataContext.ToggleAchievementCommand,
+                                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                    <Setter Property="Content" Value="Mark unlocked" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsUnlocked}" Value="True">
+                                                            <Setter Property="Content" Value="Mark locked" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Add a manual achievement (for games with no Steam schema) -->
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding NewAchievementName, UpdateSourceTrigger=PropertyChanged}"
+                                 Tag="Add a manual achievement…" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="Add" Margin="8,0,0,0"
+                                Command="{Binding AddManualAchievementCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Expander>
+          </StackPanel>
+
+        </Grid>
+    </Grid>
+    </ScrollViewer>
+
+        <!-- Pinned action bar: always reachable regardless of how long the achievement list is -->
+        <Border Grid.Row="1" Background="{StaticResource Surface}" Padding="20,12">
+            <DockPanel>
                 <TextBlock DockPanel.Dock="Left" Text="{Binding StatusMessage}" Foreground="#7BD88F"
-                           VerticalAlignment="Center" />
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="Remove" Style="{StaticResource DangerButton}" Command="{Binding RemoveCommand}"
                             Width="100" Margin="0,0,8,0" />
@@ -117,7 +231,6 @@
                             Command="{Binding SaveCommand}" Width="120" IsDefault="True" />
                 </StackPanel>
             </DockPanel>
-        </Grid>
+        </Border>
     </Grid>
-    </ScrollViewer>
 </theming:MosaicWindow>

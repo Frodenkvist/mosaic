@@ -13,7 +13,8 @@ public partial class SettingsView : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
-        KeyBox.PasswordChanged += OnPasswordChanged;
+        KeyBox.PasswordChanged += OnApiKeyChanged;
+        SteamKeyBox.PasswordChanged += OnSteamKeyChanged;
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -23,32 +24,45 @@ public partial class SettingsView : UserControl
         if (e.NewValue is SettingsViewModel newVm)
         {
             newVm.PropertyChanged += OnVmPropertyChanged;
-            SyncPasswordFromVm(newVm);
+            SyncPasswordsFromVm(newVm);
         }
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(SettingsViewModel.ApiKey) && sender is SettingsViewModel vm)
-            SyncPasswordFromVm(vm);
+        if (sender is not SettingsViewModel vm)
+            return;
+        if (e.PropertyName == nameof(SettingsViewModel.ApiKey) || e.PropertyName == nameof(SettingsViewModel.SteamWebApiKey))
+            SyncPasswordsFromVm(vm);
     }
 
-    private void SyncPasswordFromVm(SettingsViewModel vm)
+    private void SyncPasswordsFromVm(SettingsViewModel vm)
     {
         if (_syncing)
             return;
         _syncing = true;
         if (KeyBox.Password != (vm.ApiKey ?? string.Empty))
             KeyBox.Password = vm.ApiKey ?? string.Empty;
+        if (SteamKeyBox.Password != (vm.SteamWebApiKey ?? string.Empty))
+            SteamKeyBox.Password = vm.SteamWebApiKey ?? string.Empty;
         _syncing = false;
     }
 
-    private void OnPasswordChanged(object sender, RoutedEventArgs e)
+    private void OnApiKeyChanged(object sender, RoutedEventArgs e)
     {
         if (_syncing || DataContext is not SettingsViewModel vm)
             return;
         _syncing = true;
         vm.ApiKey = KeyBox.Password;
+        _syncing = false;
+    }
+
+    private void OnSteamKeyChanged(object sender, RoutedEventArgs e)
+    {
+        if (_syncing || DataContext is not SettingsViewModel vm)
+            return;
+        _syncing = true;
+        vm.SteamWebApiKey = SteamKeyBox.Password;
         _syncing = false;
     }
 
@@ -58,6 +72,15 @@ public partial class SettingsView : UserControl
         KeyText.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         KeyBox.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
         if (!show && DataContext is SettingsViewModel vm)
-            SyncPasswordFromVm(vm);
+            SyncPasswordsFromVm(vm);
+    }
+
+    private void ShowSteamKey_Toggled(object sender, RoutedEventArgs e)
+    {
+        var show = ShowSteamKey.IsChecked == true;
+        SteamKeyText.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        SteamKeyBox.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
+        if (!show && DataContext is SettingsViewModel vm)
+            SyncPasswordsFromVm(vm);
     }
 }

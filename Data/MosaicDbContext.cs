@@ -12,6 +12,7 @@ public class MosaicDbContext : DbContext
     public DbSet<Game> Games => Set<Game>();
     public DbSet<PlaySession> PlaySessions => Set<PlaySession>();
     public DbSet<Artwork> Artwork => Set<Artwork>();
+    public DbSet<Achievement> Achievements => Set<Achievement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +33,15 @@ public class MosaicDbContext : DbContext
             .HasForeignKey(a => a.GameId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Removing a game cascades to its achievements (definitions + unlock state).
+        game.HasMany(g => g.Achievements)
+            .WithOne(a => a.Game!)
+            .HasForeignKey(a => a.GameId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // New games track achievements by default; existing rows get this on migration.
+        game.Property(g => g.AchievementTrackingEnabled).HasDefaultValue(true);
+
         modelBuilder.Entity<PlaySession>(s =>
         {
             s.HasKey(x => x.Id);
@@ -43,6 +53,15 @@ public class MosaicDbContext : DbContext
         {
             a.HasKey(x => x.Id);
             a.HasIndex(x => new { x.GameId, x.Kind });
+        });
+
+        modelBuilder.Entity<Achievement>(a =>
+        {
+            a.HasKey(x => x.Id);
+            a.Property(x => x.ApiName).IsRequired();
+            a.Property(x => x.DisplayName).IsRequired();
+            // One row per achievement per game; the key matches across schema refreshes.
+            a.HasIndex(x => new { x.GameId, x.ApiName }).IsUnique();
         });
     }
 }

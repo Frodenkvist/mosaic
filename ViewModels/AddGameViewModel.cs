@@ -17,6 +17,7 @@ public partial class AddGameViewModel : ObservableObject
     [ObservableProperty] private string? _launchArguments;
     [ObservableProperty] private string? _workingDirectory;
     [ObservableProperty] private string? _realExecutableName;
+    [ObservableProperty] private string? _steamAppId;
 
     public AddGameViewModel(IDialogService dialogs)
     {
@@ -40,11 +41,13 @@ public partial class AddGameViewModel : ObservableObject
     {
         if (!IsValid)
             return null;
+        var appId = int.TryParse(SteamAppId?.Trim(), out var id) && id > 0 ? id : (int?)null;
         return new AddGameRequest(
             Name,
             ExecutablePath,
             LaunchArguments,
             WorkingDirectory,
-            RealExecutableName);
+            RealExecutableName,
+            appId);
     }
 }

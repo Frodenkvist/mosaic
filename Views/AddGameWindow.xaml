@@ -50,6 +50,11 @@
             <TextBox Text="{Binding RealExecutableName, UpdateSourceTrigger=PropertyChanged}" />
             <TextBlock Foreground="{StaticResource TextMuted}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
                        Text="Only needed if the game starts via a launcher. Enter the actual game process, e.g. game.exe, so play time is measured correctly." />
+
+            <TextBlock Text="Steam App ID for achievements (optional)" />
+            <TextBox Text="{Binding SteamAppId, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Foreground="{StaticResource TextMuted}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                       Text="If this game has Steam achievements, enter its Steam App ID to fetch the list. You can also set this later from the game's details." />
         </StackPanel>
 
         <DockPanel Grid.Row="1" Margin="0,18,0,0">

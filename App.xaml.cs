@@ -58,9 +58,12 @@ public partial class App : Application
         services.AddSingleton<IGameLibrary, GameLibrary>();
         services.AddSingleton<IPlayTracker, PlayTracker>();
         services.AddSingleton<IArtworkService, ArtworkService>();
+        services.AddSingleton<IAchievementService, AchievementService>();
         services.AddSingleton<IDialogService, DialogService>();
 
         services.AddHttpClient<SteamGridDbClient>(c =>
+            c.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<SteamWebApiClient>(c =>
             c.Timeout = TimeSpan.FromSeconds(30));
 
         // View models

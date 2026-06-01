@@ -7,6 +7,7 @@ namespace Mosaic.ViewModels;
 public partial class LibraryViewModel : GameCollectionViewModel
 {
     private readonly ISettingsService _settings;
+    private readonly IAchievementService _achievements;
 
     public string[] SortOptions { get; } =
     {
@@ -27,10 +28,12 @@ public partial class LibraryViewModel : GameCollectionViewModel
         IPlayTracker tracker,
         IDialogService dialogs,
         IArtworkService artwork,
+        IAchievementService achievements,
         ISettingsService settings)
-        : base(library, tracker, dialogs, artwork)
+        : base(library, tracker, dialogs, artwork, achievements)
     {
         _settings = settings;
+        _achievements = achievements;
     }
 
     partial void OnSelectedSortChanged(string value) => _ = RefreshAsync();
@@ -66,7 +69,10 @@ public partial class LibraryViewModel : GameCollectionViewModel
 
         try
         {
-            await Library.AddGameAsync(request);
+            var game = await Library.AddGameAsync(request);
+            // If the user supplied a Steam App ID, resolve its achievement schema (best-effort).
+            if (game.SteamAppId is > 0)
+                await _achievements.RefreshAsync(game.Id);
             await RefreshAsync();
         }
         catch (DuplicateExecutableException)

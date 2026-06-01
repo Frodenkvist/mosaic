@@ -8,4 +8,7 @@ public class AppSettings
 
     /// <summary>SteamGridDB API key; null/empty disables artwork auto-fetch.</summary>
     public string? SteamGridDbApiKey { get; set; }
+
+    /// <summary>Steam Web API key; null/empty disables achievement schema auto-resolution.</summary>
+    public string? SteamWebApiKey { get; set; }
 }

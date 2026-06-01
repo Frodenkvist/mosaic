@@ -28,6 +28,19 @@ public class Game
 
     public DateTimeOffset DateAdded { get; set; }
 
+    /// <summary>
+    /// Steam application id used to resolve achievement definitions; null when the game is not
+    /// linked to a Steam schema (e.g. "no Steam achievements" or manual-only).
+    /// </summary>
+    public int? SteamAppId { get; set; }
+
+    /// <summary>Master switch for achievement tracking on this game.</summary>
+    public bool AchievementTrackingEnabled { get; set; } = true;
+
+    /// <summary>How achievements are tracked for this game when tracking is enabled.</summary>
+    public AchievementSource AchievementSource { get; set; } = AchievementSource.Auto;
+
     public List<PlaySession> Sessions { get; set; } = new();
     public List<Artwork> Artwork { get; set; } = new();
+    public List<Achievement> Achievements { get; set; } = new();
 }
