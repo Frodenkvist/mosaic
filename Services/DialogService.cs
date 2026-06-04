@@ -56,6 +56,13 @@ public class DialogService : IDialogService
         return window.ShowDialog() == true ? vm.GetSelected() : null;
     }
 
+    public IReadOnlyList<MediaScanCandidate>? ShowMediaScanResults(IReadOnlyList<MediaScanCandidate> candidates)
+    {
+        var vm = new MediaScanResultsViewModel(candidates);
+        var window = new MediaScanResultsWindow { DataContext = vm, Owner = ActiveOwner() };
+        return window.ShowDialog() == true ? vm.GetSelected() : null;
+    }
+
     public void ShowGameDetail(int gameId)
     {
         var vm = _services.GetRequiredService<GameDetailViewModel>();
@@ -64,6 +71,16 @@ public class DialogService : IDialogService
         window.DataContext = vm;
         // Fire-and-forget load; the window binds as data arrives.
         _ = vm.InitializeAsync(gameId);
+        window.ShowDialog();
+    }
+
+    public void ShowMediaDetail(int mediaItemId)
+    {
+        var vm = _services.GetRequiredService<MediaDetailViewModel>();
+        var window = new MediaDetailWindow { Owner = ActiveOwner() };
+        vm.CloseRequested += () => window.Close();
+        window.DataContext = vm;
+        _ = vm.InitializeAsync(mediaItemId);
         window.ShowDialog();
     }
 

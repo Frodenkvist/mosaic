@@ -16,6 +16,7 @@ public partial class SettingsViewModel : ObservableObject
     private bool _suppressAutoUpdateSave;
 
     public ObservableCollection<string> ScanFolders { get; } = new();
+    public ObservableCollection<string> MediaFolders { get; } = new();
 
     /// <summary>The currently installed Mosaic version (e.g. "1.0.0").</summary>
     public string CurrentVersion { get; } = AppEnvironment.CurrentVersion.ToString(3);
@@ -24,10 +25,24 @@ public partial class SettingsViewModel : ObservableObject
     private string? _selectedFolder;
 
     [ObservableProperty]
+    private string? _selectedMediaFolder;
+
+    [ObservableProperty]
     private string? _apiKey;
 
     [ObservableProperty]
     private string? _steamWebApiKey;
+
+    [ObservableProperty]
+    private string? _tmdbApiKey;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PreferredPlayerDisplay))]
+    private string? _preferredMediaPlayerPath;
+
+    public string PreferredPlayerDisplay => string.IsNullOrWhiteSpace(PreferredMediaPlayerPath)
+        ? "Using the system default media player."
+        : PreferredMediaPlayerPath!;
 
     [ObservableProperty]
     private string? _statusMessage;
@@ -61,8 +76,13 @@ public partial class SettingsViewModel : ObservableObject
         ScanFolders.Clear();
         foreach (var folder in _settings.Current.ScanFolders)
             ScanFolders.Add(folder);
+        MediaFolders.Clear();
+        foreach (var folder in _settings.Current.MediaFolders)
+            MediaFolders.Add(folder);
         ApiKey = _settings.Current.SteamGridDbApiKey;
         SteamWebApiKey = _settings.Current.SteamWebApiKey;
+        TmdbApiKey = _settings.Current.TmdbApiKey;
+        PreferredMediaPlayerPath = _settings.Current.PreferredMediaPlayerPath;
 
         _suppressAutoUpdateSave = true;
         AutomaticUpdatesEnabled = _settings.Current.AutomaticUpdatesEnabled;
@@ -141,6 +161,46 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task AddMediaFolder()
+    {
+        var folder = _dialogs.PickFolder();
+        if (string.IsNullOrWhiteSpace(folder))
+            return;
+        if (MediaFolders.Contains(folder, StringComparer.OrdinalIgnoreCase))
+            return;
+
+        MediaFolders.Add(folder);
+        await PersistMediaFoldersAsync();
+    }
+
+    [RelayCommand]
+    private async Task RemoveMediaFolder()
+    {
+        if (SelectedMediaFolder is null)
+            return;
+        MediaFolders.Remove(SelectedMediaFolder);
+        await PersistMediaFoldersAsync();
+    }
+
+    private async Task PersistMediaFoldersAsync()
+    {
+        _settings.Current.MediaFolders = MediaFolders.ToList();
+        await _settings.SaveAsync();
+        StatusMessage = "Media folders saved.";
+    }
+
+    [RelayCommand]
+    private void BrowsePlayer()
+    {
+        var path = _dialogs.PickExecutable();
+        if (!string.IsNullOrWhiteSpace(path))
+            PreferredMediaPlayerPath = path;
+    }
+
+    [RelayCommand]
+    private void UseSystemDefaultPlayer() => PreferredMediaPlayerPath = null;
+
+    [RelayCommand]
     private async Task TestKey()
     {
         if (string.IsNullOrWhiteSpace(ApiKey))
@@ -170,8 +230,12 @@ public partial class SettingsViewModel : ObservableObject
     private async Task Save()
     {
         _settings.Current.ScanFolders = ScanFolders.ToList();
+        _settings.Current.MediaFolders = MediaFolders.ToList();
         _settings.Current.SteamGridDbApiKey = string.IsNullOrWhiteSpace(ApiKey) ? null : ApiKey.Trim();
         _settings.Current.SteamWebApiKey = string.IsNullOrWhiteSpace(SteamWebApiKey) ? null : SteamWebApiKey.Trim();
+        _settings.Current.TmdbApiKey = string.IsNullOrWhiteSpace(TmdbApiKey) ? null : TmdbApiKey.Trim();
+        _settings.Current.PreferredMediaPlayerPath =
+            string.IsNullOrWhiteSpace(PreferredMediaPlayerPath) ? null : PreferredMediaPlayerPath.Trim();
         await _settings.SaveAsync();
         StatusMessage = "Settings saved.";
     }

@@ -13,6 +13,9 @@ public class MosaicDbContext : DbContext
     public DbSet<PlaySession> PlaySessions => Set<PlaySession>();
     public DbSet<Artwork> Artwork => Set<Artwork>();
     public DbSet<Achievement> Achievements => Set<Achievement>();
+    public DbSet<MediaItem> MediaItems => Set<MediaItem>();
+    public DbSet<WatchSession> WatchSessions => Set<WatchSession>();
+    public DbSet<MediaArtwork> MediaArtwork => Set<MediaArtwork>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -62,6 +65,45 @@ public class MosaicDbContext : DbContext
             a.Property(x => x.DisplayName).IsRequired();
             // One row per achievement per game; the key matches across schema refreshes.
             a.HasIndex(x => new { x.GameId, x.ApiName }).IsUnique();
+        });
+
+        // Media domain (parallel to the game domain; entirely independent of it).
+        var media = modelBuilder.Entity<MediaItem>();
+        media.HasKey(m => m.Id);
+        media.Property(m => m.Title).IsRequired();
+        media.HasIndex(m => m.ParentId);
+        // At most one media item per video file (SQLite treats NULLs as distinct, so the many
+        // null FilePaths of Series rows are fine under this filtered unique index).
+        media.HasIndex(m => m.FilePath).IsUnique().HasFilter("\"FilePath\" IS NOT NULL");
+
+        // A series owns its episodes; removing it cascades to them (and, via the relationships
+        // below, to each episode's watch sessions and artwork).
+        media.HasMany(m => m.Episodes)
+            .WithOne(m => m.Parent!)
+            .HasForeignKey(m => m.ParentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        media.HasMany(m => m.WatchSessions)
+            .WithOne(w => w.MediaItem!)
+            .HasForeignKey(w => w.MediaItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        media.HasMany(m => m.Artwork)
+            .WithOne(a => a.MediaItem!)
+            .HasForeignKey(a => a.MediaItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<WatchSession>(w =>
+        {
+            w.HasKey(x => x.Id);
+            w.HasIndex(x => x.MediaItemId);
+            w.HasIndex(x => x.EndedAt); // open-session reconciliation & recently-watched
+        });
+
+        modelBuilder.Entity<MediaArtwork>(a =>
+        {
+            a.HasKey(x => x.Id);
+            a.HasIndex(x => new { x.MediaItemId, x.Kind });
         });
     }
 }

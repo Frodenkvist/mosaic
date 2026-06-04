@@ -98,7 +98,9 @@ public class GameDetailBusyTests
         public string? PickImage() => null;
         public AddGameRequest? ShowAddGame() => null;
         public IReadOnlyList<ScanCandidate>? ShowScanResults(IReadOnlyList<ScanCandidate> candidates) => null;
+        public IReadOnlyList<MediaScanCandidate>? ShowMediaScanResults(IReadOnlyList<MediaScanCandidate> candidates) => null;
         public void ShowGameDetail(int gameId) { }
+        public void ShowMediaDetail(int mediaItemId) { }
         public bool Confirm(string message, string title) => false;
         public void ShowMessage(string message, string title) { }
     }

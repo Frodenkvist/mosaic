@@ -64,6 +64,52 @@
             <CheckBox x:Name="ShowSteamKey" Content="Show key" Margin="0,8,0,0"
                       Checked="ShowSteamKey_Toggled" Unchecked="ShowSteamKey_Toggled" />
 
+            <!-- Media folders -->
+            <TextBlock Text="Media folders" Foreground="{StaticResource TextPrimary}" FontSize="16"
+                       FontWeight="SemiBold" Margin="0,22,0,0" />
+            <TextBlock Text="Folders Mosaic scans (including all subfolders) for your movies and TV shows."
+                       Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,2,0,8" />
+            <Border Background="{StaticResource Surface}" CornerRadius="8" Padding="8">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Margin="8,0,0,0">
+                        <Button Content="Add folder…" Command="{Binding AddMediaFolderCommand}" Margin="0,0,0,6" />
+                        <Button Content="Remove" Style="{StaticResource DangerButton}"
+                                Command="{Binding RemoveMediaFolderCommand}" />
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding MediaFolders}" SelectedItem="{Binding SelectedMediaFolder}"
+                             Height="150" />
+                </DockPanel>
+            </Border>
+
+            <!-- TMDB API key -->
+            <TextBlock Text="TMDB API key" Foreground="{StaticResource TextPrimary}" FontSize="16"
+                       FontWeight="SemiBold" Margin="0,22,0,0" />
+            <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,2,0,8" TextWrapping="Wrap"
+                       Text="Used to auto-fetch movie/TV posters and episode info. Leave blank to disable (you can still set posters manually). Get a free key at themoviedb.org. This product uses the TMDB API but is not endorsed or certified by TMDB." />
+            <Grid>
+                <PasswordBox x:Name="TmdbKeyBox" Visibility="Visible" />
+                <TextBox x:Name="TmdbKeyText" Text="{Binding TmdbApiKey, UpdateSourceTrigger=PropertyChanged}"
+                         Visibility="Collapsed" />
+            </Grid>
+            <CheckBox x:Name="ShowTmdbKey" Content="Show key" Margin="0,8,0,0"
+                      Checked="ShowTmdbKey_Toggled" Unchecked="ShowTmdbKey_Toggled" />
+
+            <!-- Preferred media player -->
+            <TextBlock Text="Media player" Foreground="{StaticResource TextPrimary}" FontSize="16"
+                       FontWeight="SemiBold" Margin="0,22,0,0" />
+            <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,2,0,8" TextWrapping="Wrap"
+                       Text="Optionally always open media in a specific player. Leave unset to use the system default file association." />
+            <Border Background="{StaticResource Surface}" CornerRadius="8" Padding="10">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
+                        <Button Content="Browse…" Command="{Binding BrowsePlayerCommand}" Margin="0,0,6,0" />
+                        <Button Content="Use system default" Command="{Binding UseSystemDefaultPlayerCommand}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding PreferredPlayerDisplay}" Foreground="{StaticResource TextSecondary}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+            </Border>
+
             <!-- Updates -->
             <TextBlock Text="Updates" Foreground="{StaticResource TextPrimary}" FontSize="16"
                        FontWeight="SemiBold" Margin="0,22,0,0" />

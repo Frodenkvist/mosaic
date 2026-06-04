@@ -10,6 +10,7 @@ public partial class MainViewModel : ObservableObject
 {
     public LibraryViewModel Library { get; }
     public RecentlyPlayedViewModel RecentlyPlayed { get; }
+    public MediaLibraryViewModel Media { get; }
     public SettingsViewModel Settings { get; }
 
     private readonly IUpdateService _updates;
@@ -41,6 +42,7 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(
         LibraryViewModel library,
         RecentlyPlayedViewModel recentlyPlayed,
+        MediaLibraryViewModel media,
         SettingsViewModel settings,
         IAchievementService achievements,
         IUpdateService updates,
@@ -48,6 +50,7 @@ public partial class MainViewModel : ObservableObject
     {
         Library = library;
         RecentlyPlayed = recentlyPlayed;
+        Media = media;
         Settings = settings;
         _updates = updates;
         _dialogs = dialogs;
@@ -130,6 +133,14 @@ public partial class MainViewModel : ObservableObject
         CurrentSection = "Recently Played";
         CurrentView = RecentlyPlayed;
         await RecentlyPlayed.RefreshAsync();
+    }
+
+    [RelayCommand]
+    private async Task ShowMedia()
+    {
+        CurrentSection = "Media";
+        CurrentView = Media;
+        await Media.RefreshAsync();
     }
 
     [RelayCommand]

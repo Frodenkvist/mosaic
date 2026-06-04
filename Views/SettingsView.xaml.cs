@@ -15,6 +15,7 @@ public partial class SettingsView : UserControl
         DataContextChanged += OnDataContextChanged;
         KeyBox.PasswordChanged += OnApiKeyChanged;
         SteamKeyBox.PasswordChanged += OnSteamKeyChanged;
+        TmdbKeyBox.PasswordChanged += OnTmdbKeyChanged;
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -32,7 +33,9 @@ public partial class SettingsView : UserControl
     {
         if (sender is not SettingsViewModel vm)
             return;
-        if (e.PropertyName == nameof(SettingsViewModel.ApiKey) || e.PropertyName == nameof(SettingsViewModel.SteamWebApiKey))
+        if (e.PropertyName == nameof(SettingsViewModel.ApiKey)
+            || e.PropertyName == nameof(SettingsViewModel.SteamWebApiKey)
+            || e.PropertyName == nameof(SettingsViewModel.TmdbApiKey))
             SyncPasswordsFromVm(vm);
     }
 
@@ -45,6 +48,8 @@ public partial class SettingsView : UserControl
             KeyBox.Password = vm.ApiKey ?? string.Empty;
         if (SteamKeyBox.Password != (vm.SteamWebApiKey ?? string.Empty))
             SteamKeyBox.Password = vm.SteamWebApiKey ?? string.Empty;
+        if (TmdbKeyBox.Password != (vm.TmdbApiKey ?? string.Empty))
+            TmdbKeyBox.Password = vm.TmdbApiKey ?? string.Empty;
         _syncing = false;
     }
 
@@ -64,6 +69,24 @@ public partial class SettingsView : UserControl
         _syncing = true;
         vm.SteamWebApiKey = SteamKeyBox.Password;
         _syncing = false;
+    }
+
+    private void OnTmdbKeyChanged(object sender, RoutedEventArgs e)
+    {
+        if (_syncing || DataContext is not SettingsViewModel vm)
+            return;
+        _syncing = true;
+        vm.TmdbApiKey = TmdbKeyBox.Password;
+        _syncing = false;
+    }
+
+    private void ShowTmdbKey_Toggled(object sender, RoutedEventArgs e)
+    {
+        var show = ShowTmdbKey.IsChecked == true;
+        TmdbKeyText.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        TmdbKeyBox.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
+        if (!show && DataContext is SettingsViewModel vm)
+            SyncPasswordsFromVm(vm);
     }
 
     private void ShowKey_Toggled(object sender, RoutedEventArgs e)

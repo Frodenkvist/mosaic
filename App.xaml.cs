@@ -40,6 +40,10 @@ public partial class App : Application
         }
         await _host.Services.GetRequiredService<IPlayTracker>().ReconcileOpenSessionsAsync();
 
+        // Instantiate the Tier-1 watch observer so it subscribes to media playback (best-effort; no-op
+        // when the system media-controls API publishes nothing for the user's player).
+        _host.Services.GetRequiredService<SystemMediaWatchObserver>();
+
         var mainVm = _host.Services.GetRequiredService<MainViewModel>();
         var window = new MainWindow { DataContext = mainVm };
         MainWindow = window;
@@ -70,9 +74,18 @@ public partial class App : Application
         services.AddSingleton<IAchievementService, AchievementService>();
         services.AddSingleton<IDialogService, DialogService>();
 
+        // Media domain (parallel to the game services; independent of them).
+        services.AddSingleton<IMediaArtworkService, MediaArtworkService>();
+        services.AddSingleton<IMediaLibrary, MediaLibrary>();
+        services.AddSingleton<MediaPlaybackTracker>();
+        services.AddSingleton<IMediaPlaybackTracker>(sp => sp.GetRequiredService<MediaPlaybackTracker>());
+        services.AddSingleton<SystemMediaWatchObserver>();
+
         services.AddHttpClient<SteamGridDbClient>(c =>
             c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<SteamWebApiClient>(c =>
+            c.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<TmdbClient>(c =>
             c.Timeout = TimeSpan.FromSeconds(30));
 
         // UpdateService is a typed HttpClient (GitHub needs a User-Agent; the timeout is generous
@@ -90,9 +103,11 @@ public partial class App : Application
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<RecentlyPlayedViewModel>();
+        services.AddSingleton<MediaLibraryViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddTransient<GameDetailViewModel>();
         services.AddTransient<AddGameViewModel>();
+        services.AddTransient<MediaDetailViewModel>();
     }
 
     /// <summary>Runs an async action on the UI dispatcher thread.</summary>

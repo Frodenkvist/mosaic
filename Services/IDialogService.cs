@@ -19,8 +19,14 @@ public interface IDialogService
     /// <summary>Shows scan candidates for confirmation; returns the chosen subset or null if cancelled.</summary>
     IReadOnlyList<ScanCandidate>? ShowScanResults(IReadOnlyList<ScanCandidate> candidates);
 
+    /// <summary>Shows media scan candidates for confirmation; returns the chosen subset or null if cancelled.</summary>
+    IReadOnlyList<MediaScanCandidate>? ShowMediaScanResults(IReadOnlyList<MediaScanCandidate> candidates);
+
     /// <summary>Opens the detail window for a game (modal).</summary>
     void ShowGameDetail(int gameId);
+
+    /// <summary>Opens the detail window for a media item (modal).</summary>
+    void ShowMediaDetail(int mediaItemId);
 
     bool Confirm(string message, string title);
 
