@@ -17,6 +17,104 @@
             <conv:InverseBooleanConverter x:Key="InverseBool" />
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
+            <!-- Poster tile shared by the Media library grid and the Recently Watched grid.
+                 The Play/OpenDetail/Remove/RetryArtwork commands live on the hosting collection
+                 view model (MediaCollectionViewModel), reached via the ItemsControl's DataContext. -->
+            <DataTemplate x:Key="MediaTile" DataType="{x:Type vm:MediaTileViewModel}">
+                <Border Width="180" Margin="10" Background="{StaticResource Surface}" CornerRadius="10"
+                        Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ItemsControl}}">
+                    <Border.InputBindings>
+                        <MouseBinding MouseAction="LeftDoubleClick"
+                                      Command="{Binding DataContext.OpenDetailCommand,
+                                                  RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                      CommandParameter="{Binding}" />
+                    </Border.InputBindings>
+                    <Border.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="▶  Play / Resume"
+                                      Command="{Binding PlacementTarget.Tag.PlayCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                            <MenuItem Header="Details / Episodes"
+                                      Command="{Binding PlacementTarget.Tag.OpenDetailCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                            <MenuItem Header="Remove…"
+                                      Command="{Binding PlacementTarget.Tag.RemoveCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                        </ContextMenu>
+                    </Border.ContextMenu>
+
+                    <StackPanel>
+                        <Grid Height="260">
+                            <Border Background="{StaticResource SurfaceAlt}" CornerRadius="10,10,0,0">
+                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextMuted}"
+                                           TextWrapping="Wrap" TextAlignment="Center"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8" />
+                            </Border>
+                            <Border CornerRadius="10,10,0,0" ClipToBounds="True">
+                                <Image Source="{Binding PosterPath, Converter={StaticResource PathToImage}}"
+                                       Stretch="UniformToFill" />
+                            </Border>
+                            <!-- Kind chip -->
+                            <Border VerticalAlignment="Top" HorizontalAlignment="Left" Margin="8"
+                                    Background="#CC1B1C2A" CornerRadius="10" Padding="8,3">
+                                <TextBlock Text="{Binding KindLabel}" Foreground="White" FontSize="10" FontWeight="SemiBold" />
+                            </Border>
+                            <!-- Watched check -->
+                            <Border VerticalAlignment="Top" HorizontalAlignment="Right" Margin="8"
+                                    Background="#CC1FAA55" CornerRadius="12" Width="24" Height="24"
+                                    Visibility="{Binding IsWatched, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="✓" Foreground="White" FontWeight="Bold"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </Border>
+                            <!-- Series progress -->
+                            <Border VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="8"
+                                    Background="#CC1B1C2A" CornerRadius="10" Padding="8,3"
+                                    ToolTip="Episodes watched"
+                                    Visibility="{Binding HasEpisodeProgress, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding ProgressDisplay}" Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                            </Border>
+                            <!-- Artwork fetch in progress -->
+                            <Border VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="8"
+                                    Background="#CC6C5CE7" CornerRadius="10" Padding="8,3"
+                                    Visibility="{Binding IsFetchingArtwork, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="⟳ Fetching…" Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                            </Border>
+                            <!-- Artwork fetch failed — click to retry -->
+                            <Button VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="8"
+                                    Style="{StaticResource StatusPillButton}"
+                                    ToolTip="Couldn't fetch a poster — click to retry"
+                                    Visibility="{Binding ArtworkFetchFailed, Converter={StaticResource BoolToVisibility}}"
+                                    Command="{Binding DataContext.RetryArtworkCommand,
+                                                RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding MediaItemId}">
+                                <TextBlock Text="⚠ Retry" Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                            </Button>
+                        </Grid>
+                        <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextPrimary}"
+                                   FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="12,8,12,0" />
+                        <TextBlock Text="{Binding YearDisplay}" Foreground="{StaticResource TextSecondary}"
+                                   FontSize="12" Margin="12,2,12,0" />
+                        <TextBlock Text="{Binding ResumeDisplay}" Foreground="{StaticResource TextMuted}"
+                                   FontSize="11" Margin="12,0,12,8"
+                                   Visibility="{Binding HasResume, Converter={StaticResource BoolToVisibility}}" />
+                        <Grid Margin="10,0,10,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Content="▶ Play" Style="{StaticResource AccentButton}"
+                                    Command="{Binding DataContext.PlayCommand,
+                                                RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding}" />
+                            <Button Grid.Column="1" Content="⋯" Margin="6,0,0,0" Padding="10,7"
+                                    Command="{Binding DataContext.OpenDetailCommand,
+                                                RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+
             <!-- View-model to view mapping for the content host -->
             <DataTemplate DataType="{x:Type vm:LibraryViewModel}">
                 <views:LibraryView />
@@ -26,6 +124,9 @@
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:MediaLibraryViewModel}">
                 <views:MediaLibraryView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:MediaRecentlyWatchedViewModel}">
+                <views:MediaRecentlyWatchedView />
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
                 <views:SettingsView />

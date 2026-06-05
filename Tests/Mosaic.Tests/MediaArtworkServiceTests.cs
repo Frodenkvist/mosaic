@@ -118,6 +118,103 @@ public class MediaArtworkServiceTests : IDisposable
         Assert.Contains(movie.Artwork, a => a.Kind == MediaArtworkKind.Poster && a.IsManualOverride);
     }
 
+    [Fact]
+    public async Task Fetch_MatchesSeries_ByOriginalName_WhenLocalizedNameDiffers()
+    {
+        // Folder is named with the romanized title; TMDB's localized name is the English release title.
+        var (seriesId, _) = await SeedSeriesAsync("Yomi no Tsugai");
+        var service = NewService("key", req =>
+        {
+            var url = req.RequestUri!.ToString();
+            if (url.Contains("search/tv"))
+                return Json("{\"results\":[{\"id\":260463,\"name\":\"Daemons of the Shadow Realm\"," +
+                            "\"original_name\":\"Yomi no Tsugai\",\"first_air_date\":\"2026-04-04\",\"poster_path\":\"/p.jpg\"}]}");
+            if (url.Contains("/season/")) return Json("{\"episodes\":[]}");
+            return Bytes();
+        });
+
+        await service.FetchArtworkAsync(seriesId);
+
+        var series = await GetItemAsync(seriesId, includeArtwork: true);
+        Assert.Equal(260463, series.TmdbId);
+        Assert.Contains(series.Artwork, a => a.Kind == MediaArtworkKind.Poster);
+    }
+
+    [Fact]
+    public async Task Fetch_MatchesSeries_ViaAlternativeTitles_WhenNameAndNativeOriginalDiffer()
+    {
+        // TMDB's localized name is English and its original_name is the native (Japanese) script —
+        // neither token-matches the romanized folder name. The romanization lives in /alternative_titles.
+        var (seriesId, _) = await SeedSeriesAsync("Yomi no Tsugai");
+        var service = NewService("key", req =>
+        {
+            var url = req.RequestUri!.ToString();
+            if (url.Contains("search/tv"))
+                return Json("{\"results\":[" +
+                            "{\"id\":999,\"name\":\"Some Other Show\",\"original_name\":\"Some Other Show\",\"first_air_date\":\"2020-01-01\"}," +
+                            "{\"id\":260463,\"name\":\"Daemons of the Shadow Realm\",\"original_name\":\"\\u9ec4\\u6cc9\\u306e\\u30c4\\u30ac\\u30a4\",\"first_air_date\":\"2026-04-04\",\"poster_path\":\"/p.jpg\"}]}");
+            if (url.Contains("/alternative_titles"))
+                return url.Contains("/tv/260463/")
+                    ? Json("{\"results\":[{\"iso_3166_1\":\"JP\",\"title\":\"Yomi no Tsugai\",\"type\":\"Romaji\"}]}")
+                    : Json("{\"results\":[]}");
+            if (url.Contains("/season/")) return Json("{\"episodes\":[]}");
+            return Bytes();
+        });
+
+        await service.FetchArtworkAsync(seriesId);
+
+        var series = await GetItemAsync(seriesId, includeArtwork: true);
+        Assert.Equal(260463, series.TmdbId);
+        Assert.Contains(series.Artwork, a => a.Kind == MediaArtworkKind.Poster);
+    }
+
+    [Fact]
+    public async Task Fetch_AdoptsSoleSearchResult_AsLastResort_WhenNoTitleMatches()
+    {
+        // No localized/original/alternative title matches, but TMDB resolved the specific query to a single
+        // result — treat it as correct (the conservative gate would otherwise leave foreign media art-less).
+        var (seriesId, _) = await SeedSeriesAsync("Yomi no Tsugai");
+        var service = NewService("key", req =>
+        {
+            var url = req.RequestUri!.ToString();
+            if (url.Contains("search/tv"))
+                return Json("{\"results\":[{\"id\":260463,\"name\":\"Daemons of the Shadow Realm\"," +
+                            "\"original_name\":\"\\u9ec4\\u6cc9\\u306e\\u30c4\\u30ac\\u30a4\",\"first_air_date\":\"2026-04-04\",\"poster_path\":\"/p.jpg\"}]}");
+            if (url.Contains("/alternative_titles")) return Json("{\"results\":[]}");
+            if (url.Contains("/season/")) return Json("{\"episodes\":[]}");
+            return Bytes();
+        });
+
+        await service.FetchArtworkAsync(seriesId);
+
+        var series = await GetItemAsync(seriesId, includeArtwork: true);
+        Assert.Equal(260463, series.TmdbId);
+    }
+
+    [Fact]
+    public async Task Fetch_DoesNotMatch_WhenMultipleDissimilarResults_AndNoAlternativeTitles()
+    {
+        // Precision guard: several unrelated results, none similar and no alternative title matches, and not a
+        // single unambiguous result -> no match (red triangle), rather than guessing.
+        var movieId = await SeedMovieAsync("Totally Made Up Title", year: null);
+        var service = NewService("key", req =>
+        {
+            var url = req.RequestUri!.ToString();
+            if (url.Contains("search/movie"))
+                return Json("{\"results\":[" +
+                            "{\"id\":1,\"title\":\"Alpha\",\"original_title\":\"Alpha\"}," +
+                            "{\"id\":2,\"title\":\"Beta\",\"original_title\":\"Beta\"}]}");
+            if (url.Contains("/alternative_titles")) return Json("{\"titles\":[]}");
+            return Bytes();
+        });
+
+        await service.FetchArtworkAsync(movieId);
+
+        var movie = await GetItemAsync(movieId, includeArtwork: true);
+        Assert.Null(movie.TmdbId);
+        Assert.Empty(movie.Artwork);
+    }
+
     // --- helpers ---
 
     private MediaArtworkService NewService(string? apiKey, Func<HttpRequestMessage, HttpResponseMessage> responder)

@@ -5,8 +5,9 @@ using System.Text.Json.Serialization;
 
 namespace Mosaic.Services;
 
-/// <summary>A TMDB movie or TV match.</summary>
-public record TmdbMatch(int Id, string Title, int? Year, string? PosterPath, string? BackdropPath, string? Overview);
+/// <summary>A TMDB movie or TV match. <see cref="OriginalTitle"/> is the untranslated title
+/// (e.g. an anime's romanized/native name), which often differs from the localized <see cref="Title"/>.</summary>
+public record TmdbMatch(int Id, string Title, string? OriginalTitle, int? Year, string? PosterPath, string? BackdropPath, string? Overview);
 
 /// <summary>One episode from a TMDB season.</summary>
 public record TmdbEpisode(int EpisodeNumber, string? Name, string? StillPath);
@@ -46,6 +47,26 @@ public class TmdbClient
         return MapResults(result, isTv: true);
     }
 
+    /// <summary>
+    /// Alternative titles for a movie or TV series (e.g. romanizations / regional names). Used to rescue
+    /// matches where the filename uses a title TMDB only exposes here, not as its localized/original name.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetAlternativeTitlesAsync(int id, bool isTv, string apiKey, CancellationToken ct)
+    {
+        var kind = isTv ? "tv" : "movie";
+        var url = $"{BaseUrl}{kind}/{id}/alternative_titles?api_key={apiKey}";
+        var result = await GetAsync<AlternativeTitlesResponse>(url, ct);
+        // Movies return the list under "titles"; TV under "results".
+        var titles = result?.Titles ?? result?.Results;
+        if (titles is null)
+            return Array.Empty<string>();
+        return titles
+            .Select(t => t.Title)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t!)
+            .ToList();
+    }
+
     /// <summary>Episodes (number, name, still) for one season of a TV series.</summary>
     public async Task<IReadOnlyList<TmdbEpisode>> GetSeasonEpisodesAsync(int tvId, int season, string apiKey, CancellationToken ct)
     {
@@ -78,8 +99,9 @@ public class TmdbClient
             .Select(r =>
             {
                 var name = (isTv ? r.Name : r.Title) ?? string.Empty;
+                var original = isTv ? r.OriginalName : r.OriginalTitle;
                 var date = isTv ? r.FirstAirDate : r.ReleaseDate;
-                return new TmdbMatch(r.Id, name, ParseYear(date), r.PosterPath, r.BackdropPath, r.Overview);
+                return new TmdbMatch(r.Id, name, original, ParseYear(date), r.PosterPath, r.BackdropPath, r.Overview);
             })
             .Where(m => !string.IsNullOrWhiteSpace(m.Title))
             .ToList();
@@ -135,6 +157,8 @@ public class TmdbClient
         [JsonPropertyName("id")] public int Id { get; set; }
         [JsonPropertyName("title")] public string? Title { get; set; }          // movie
         [JsonPropertyName("name")] public string? Name { get; set; }            // tv
+        [JsonPropertyName("original_title")] public string? OriginalTitle { get; set; } // movie
+        [JsonPropertyName("original_name")] public string? OriginalName { get; set; }   // tv
         [JsonPropertyName("release_date")] public string? ReleaseDate { get; set; }
         [JsonPropertyName("first_air_date")] public string? FirstAirDate { get; set; }
         [JsonPropertyName("poster_path")] public string? PosterPath { get; set; }
@@ -152,5 +176,16 @@ public class TmdbClient
         [JsonPropertyName("episode_number")] public int EpisodeNumber { get; set; }
         [JsonPropertyName("name")] public string? Name { get; set; }
         [JsonPropertyName("still_path")] public string? StillPath { get; set; }
+    }
+
+    private class AlternativeTitlesResponse
+    {
+        [JsonPropertyName("titles")] public List<AltTitleDto>? Titles { get; set; }   // movie
+        [JsonPropertyName("results")] public List<AltTitleDto>? Results { get; set; } // tv
+    }
+
+    private class AltTitleDto
+    {
+        [JsonPropertyName("title")] public string? Title { get; set; }
     }
 }

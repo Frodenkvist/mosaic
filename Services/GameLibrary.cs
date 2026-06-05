@@ -184,17 +184,7 @@ public class GameLibrary : IGameLibrary
                 continue;
 
             var root = Path.GetFullPath(folder);
-            IEnumerable<string> exes;
-            try
-            {
-                exes = Directory.EnumerateFiles(root, "*.exe", SearchOption.AllDirectories);
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-            {
-                continue;
-            }
-
-            foreach (var exe in exes)
+            foreach (var exe in EnumerateExecutables(root))
             {
                 var full = Path.GetFullPath(exe);
                 var (gameDir, displayName) = ResolveGameDir(root, full);
@@ -225,6 +215,47 @@ public class GameLibrary : IGameLibrary
         return candidates
             .OrderBy(c => c.SuggestedName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// Recursively yields every "*.exe" under <paramref name="root"/>, walking directories manually so a
+    /// single unreadable directory doesn't abort the whole scan. EnumerationOptions.IgnoreInaccessible only
+    /// swallows UnauthorizedAccessException, not a general IOException (e.g. an "unexpected network error"
+    /// reaching a restricted directory on a mapped network drive), so we materialise and catch per directory.
+    /// </summary>
+    private static IEnumerable<string> EnumerateExecutables(string root)
+    {
+        var options = new EnumerationOptions { IgnoreInaccessible = true };
+        var stack = new Stack<string>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var dir = stack.Pop();
+
+            List<string> exes;
+            try
+            {
+                exes = Directory.EnumerateFiles(dir, "*.exe", options).ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                exes = [];
+            }
+            foreach (var exe in exes)
+                yield return exe;
+
+            List<string> subdirs;
+            try
+            {
+                subdirs = Directory.EnumerateDirectories(dir, "*", options).ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                subdirs = [];
+            }
+            foreach (var subdir in subdirs)
+                stack.Push(subdir);
+        }
     }
 
     /// <summary>Maps an executable to its game folder (immediate child of the scan root) + display name.</summary>

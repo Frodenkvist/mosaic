@@ -314,9 +314,44 @@ public class MediaLibrary : IMediaLibrary
 
     private static IEnumerable<string> EnumerateVideoFiles(string root)
     {
-        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
-        return Directory.EnumerateFiles(root, "*", options)
-            .Where(f => VideoExtensions.Contains(Path.GetExtension(f)));
+        // Walk directories manually so a single unreadable directory doesn't abort the whole scan.
+        // EnumerationOptions.IgnoreInaccessible only swallows UnauthorizedAccessException, not a general
+        // IOException (e.g. "unexpected network error" reaching a restricted dir like lost+found on a
+        // mapped network drive). Materialising each directory's entries inside the try lets us catch
+        // mid-enumeration failures per directory and keep scanning siblings.
+        var options = new EnumerationOptions { IgnoreInaccessible = true };
+        var stack = new Stack<string>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var dir = stack.Pop();
+
+            List<string> files;
+            try
+            {
+                files = Directory.EnumerateFiles(dir, "*", options)
+                    .Where(f => VideoExtensions.Contains(Path.GetExtension(f)))
+                    .ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                files = [];
+            }
+            foreach (var file in files)
+                yield return file;
+
+            List<string> subdirs;
+            try
+            {
+                subdirs = Directory.EnumerateDirectories(dir, "*", options).ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                subdirs = [];
+            }
+            foreach (var subdir in subdirs)
+                stack.Push(subdir);
+        }
     }
 
     private static bool IsJunk(string root, string path)

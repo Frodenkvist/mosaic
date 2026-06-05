@@ -80,6 +80,12 @@
                         <Binding Path="CurrentSection" Converter="{StaticResource SectionActive}" ConverterParameter="Media" />
                     </Button.Tag>
                 </Button>
+                <Button Style="{StaticResource NavButton}" Content="🍿   Recently Watched"
+                        Command="{Binding ShowMediaRecentlyWatchedCommand}">
+                    <Button.Tag>
+                        <Binding Path="CurrentSection" Converter="{StaticResource SectionActive}" ConverterParameter="Recently Watched" />
+                    </Button.Tag>
+                </Button>
                 <Button Style="{StaticResource NavButton}" Content="⚙   Settings"
                         Command="{Binding ShowSettingsCommand}">
                     <Button.Tag>

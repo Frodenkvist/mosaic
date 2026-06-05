@@ -21,10 +21,20 @@ public static class MediaNameParser
         new(@"[Ss](\d{1,2})[\s._\-]*[Ee](\d{1,3})", RegexOptions.Compiled);
     private static readonly Regex NxNN =
         new(@"(?<!\d)(\d{1,2})[xX](\d{1,3})(?!\d)", RegexOptions.Compiled);
+    // A season/arc ancestor folder: "Season 2", "S01", "Series 3", and the anime equivalents
+    // "Arc 1", "Part 2", "Cour 1", "Chapter 4" — with an optional trailing title ("Arc 1 - Unwavering Resolve").
     private static readonly Regex SeasonFolder =
-        new(@"^(?:season|series|s)[\s._\-]*(\d{1,2})$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        new(@"^(?:season|series|saison|arc|part|cour|chapter|s)[\s._\-]*(\d{1,2})\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // An "E05"/"Ep05"/"Episode 5" marker; the E must sit on a word boundary so it isn't matched
+    // inside a word (e.g. the "e 100" in "The 100th").
     private static readonly Regex EpisodeNumberInName =
-        new(@"[Ee](?:p|pisode)?[\s._\-]*(\d{1,3})", RegexOptions.Compiled);
+        new(@"\b[Ee](?:p|pisode)?[\s._\-]*(\d{1,3})", RegexOptions.Compiled);
+    // An "absolute" / dash-delimited episode number, common for anime: "Show - 01 Title", "Show Ep01",
+    // "[Grp] Show - 012 [1080p]", "Show #01". The number (1-3 digits, not a 4-digit year) must be
+    // delimited by a dash, an E/Ep marker on a word boundary, or '#', so movie titles that merely end in
+    // a number ("Apollo 13", "Toy Story 3") aren't mistaken for episodes.
+    private static readonly Regex AbsoluteEpisode =
+        new(@"(?:[-–—]\s*|(?<=[\s._\-])[Ee](?:p|pisode)?\.?\s*|#\s*)(\d{1,3})(?!\d)", RegexOptions.Compiled);
     private static readonly Regex TrailingNumber =
         new(@"(?<!\d)(\d{1,3})(?!\d)", RegexOptions.Compiled);
     private static readonly Regex YearRx =
@@ -52,7 +62,7 @@ public static class MediaNameParser
             return new EpisodeInfo(ResolveShowName(fileName[..m.Index], dir), season, episode);
         }
 
-        // 2. A "Season N" ancestor folder + an episode number in the file name.
+        // 2. A "Season N" / "Arc N" ancestor folder + an episode number in the file name.
         var season2 = FindSeasonFolder(dir, out var showFolder);
         if (season2 is int s)
         {
@@ -64,6 +74,16 @@ public static class MediaNameParser
                     : ResolveShowName(string.Empty, dir);
                 return new EpisodeInfo(show, s, ep);
             }
+        }
+
+        // 3. An "absolute" / dash-delimited episode number in the file name (common for anime, e.g.
+        //    "Show - 01 Title"). The season comes from an Arc/Season ancestor folder when present, else 1.
+        var am = AbsoluteEpisode.Match(fileName);
+        if (am.Success)
+        {
+            var episode = int.Parse(am.Groups[1].Value);
+            var season = FindSeasonFolder(dir, out _) ?? 1;
+            return new EpisodeInfo(ResolveShowName(fileName[..am.Index], dir), season, episode);
         }
 
         return null;
@@ -95,6 +115,10 @@ public static class MediaNameParser
         var m = EpisodeNumberInName.Match(fileName);
         if (m.Success)
             return int.Parse(m.Groups[1].Value);
+        // A dash/'#'-delimited number ("Show - 05") before falling back to a bare trailing number.
+        var a = AbsoluteEpisode.Match(fileName);
+        if (a.Success)
+            return int.Parse(a.Groups[1].Value);
         // Fall back to the last standalone number (we already know we're inside a Season folder).
         var matches = TrailingNumber.Matches(fileName);
         return matches.Count > 0 ? int.Parse(matches[^1].Groups[1].Value) : null;

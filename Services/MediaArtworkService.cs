@@ -162,9 +162,14 @@ public class MediaArtworkService : IMediaArtworkService
         return localPath;
     }
 
+    // How many top-ranked candidates to probe for alternative titles before giving up.
+    private const int AltTitleProbeLimit = 3;
+
     private async Task<TmdbMatch?> ResolveMatchAsync(MediaItem item, string apiKey, CancellationToken ct)
     {
-        async Task<IReadOnlyList<TmdbMatch>> Search(int? year) => item.Kind == MediaKind.Series
+        var isTv = item.Kind == MediaKind.Series;
+
+        async Task<IReadOnlyList<TmdbMatch>> Search(int? year) => isTv
             ? await _client.SearchTvAsync(item.Title, year, apiKey, ct)
             : await _client.SearchMoviesAsync(item.Title, year, apiKey, ct);
 
@@ -174,16 +179,38 @@ public class MediaArtworkService : IMediaArtworkService
         if (results.Count == 0)
             return null;
 
-        var best = results
-            .Select(r => new
-            {
-                Match = r,
-                Score = ArtworkService.Similarity(item.Title, r.Title)
-                        + (item.Year is int y && r.Year == y ? 0.2 : 0), // year agreement breaks ties
-            })
+        var ranked = results
+            .Select(r => new { Match = r, Score = TitleScore(item, r) })
             .OrderByDescending(x => x.Score)
-            .First();
-        return best.Score >= MatchThreshold ? best.Match : null;
+            .ToList();
+
+        // 1) Confident match: the localized or original title is similar enough.
+        if (ranked[0].Score >= MatchThreshold)
+            return ranked[0].Match;
+
+        // 2) Foreign/romanized titles (e.g. anime) are often filed under an alternative title TMDB only
+        //    exposes via /alternative_titles — not as its localized name or native original name. Re-score
+        //    the strongest candidates against those before giving up.
+        foreach (var candidate in ranked.Take(AltTitleProbeLimit))
+        {
+            var alts = await _client.GetAlternativeTitlesAsync(candidate.Match.Id, isTv, apiKey, ct);
+            if (alts.Any(t => ArtworkService.Similarity(item.Title, t) >= MatchThreshold))
+                return candidate.Match;
+        }
+
+        // 3) Last resort: a specific query that TMDB resolves to a single result is almost certainly correct.
+        return results.Count == 1 ? results[0] : null;
+    }
+
+    // Best title similarity across TMDB's localized and original titles, plus a small year-agreement bonus.
+    private static double TitleScore(MediaItem item, TmdbMatch r)
+    {
+        var yearBonus = item.Year is int y && r.Year == y ? 0.2 : 0;
+        var localized = ArtworkService.Similarity(item.Title, r.Title);
+        var original = string.IsNullOrWhiteSpace(r.OriginalTitle)
+            ? 0
+            : ArtworkService.Similarity(item.Title, r.OriginalTitle!);
+        return Math.Max(localized, original) + yearBonus;
     }
 
     private async Task<bool> FillEpisodesAsync(MosaicDbContext db, MediaItem series, int tvId, string apiKey, CancellationToken ct)

@@ -104,6 +104,7 @@ public partial class App : Application
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<RecentlyPlayedViewModel>();
         services.AddSingleton<MediaLibraryViewModel>();
+        services.AddSingleton<MediaRecentlyWatchedViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddTransient<GameDetailViewModel>();
         services.AddTransient<AddGameViewModel>();
