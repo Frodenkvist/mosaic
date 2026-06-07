@@ -35,6 +35,11 @@ public static class MediaNameParser
     // a number ("Apollo 13", "Toy Story 3") aren't mistaken for episodes.
     private static readonly Regex AbsoluteEpisode =
         new(@"(?:[-–—]\s*|(?<=[\s._\-])[Ee](?:p|pisode)?\.?\s*|#\s*)(\d{1,3})(?!\d)", RegexOptions.Compiled);
+    // A leading episode number — the common "<episode> <title>" convention ("36 1.28 (January 28)",
+    // "1 Rebirth"). Only when the name *starts* with a 1-3 digit number followed by a separator, so a
+    // number that appears later in the title (a date, a part number) can't out-rank the real prefix.
+    private static readonly Regex LeadingNumber =
+        new(@"^(\d{1,3})(?=[\s._\-]|$)", RegexOptions.Compiled);
     private static readonly Regex TrailingNumber =
         new(@"(?<!\d)(\d{1,3})(?!\d)", RegexOptions.Compiled);
     private static readonly Regex YearRx =
@@ -115,10 +120,15 @@ public static class MediaNameParser
         var m = EpisodeNumberInName.Match(fileName);
         if (m.Success)
             return int.Parse(m.Groups[1].Value);
-        // A dash/'#'-delimited number ("Show - 05") before falling back to a bare trailing number.
+        // A dash/'#'-delimited number ("Show - 05") before falling back to a bare leading/trailing number.
         var a = AbsoluteEpisode.Match(fileName);
         if (a.Success)
             return int.Parse(a.Groups[1].Value);
+        // A leading number is the episode in the "<episode> <title>" convention — preferred over a
+        // number embedded later in the title (e.g. "36 1.28 (January 28)" is episode 36, not 28).
+        var lead = LeadingNumber.Match(fileName);
+        if (lead.Success)
+            return int.Parse(lead.Groups[1].Value);
         // Fall back to the last standalone number (we already know we're inside a Season folder).
         var matches = TrailingNumber.Matches(fileName);
         return matches.Count > 0 ? int.Parse(matches[^1].Groups[1].Value) : null;

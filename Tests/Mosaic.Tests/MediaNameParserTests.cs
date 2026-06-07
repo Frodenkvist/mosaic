@@ -85,6 +85,26 @@ public class MediaNameParserTests
         Assert.Equal(2, ep.Value.Episode);
     }
 
+    [Fact]
+    public void TryParseEpisode_SeasonFolder_LeadingNumberWins_OverNumbersInTitle()
+    {
+        // "<episode> <title>" convention: the leading 36 is the episode, not the 28 in the title.
+        var ep = MediaNameParser.TryParseEpisode(@"C:\TV\Death Note\Season 1\36 1.28 (January 28).mkv");
+        Assert.NotNull(ep);
+        Assert.Equal("Death Note", ep!.Value.ShowName);
+        Assert.Equal(1, ep.Value.Season);
+        Assert.Equal(36, ep.Value.Episode);
+    }
+
+    [Fact]
+    public void TryParseEpisode_SeasonFolder_LeadingNumber_SimpleTitle()
+    {
+        var ep = MediaNameParser.TryParseEpisode(@"C:\TV\Death Note\Season 1\1 Rebirth.mkv");
+        Assert.NotNull(ep);
+        Assert.Equal(1, ep!.Value.Season);
+        Assert.Equal(1, ep.Value.Episode);
+    }
+
     [Theory]
     [InlineData(@"C:\Movies\Inception (2010).mkv")]
     [InlineData(@"C:\Movies\The Matrix 1999 1080p BluRay.mkv")]

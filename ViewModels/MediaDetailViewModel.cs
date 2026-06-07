@@ -33,6 +33,23 @@ public partial class EpisodeRowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isWatched;
+
+    // Inline-edit state for correcting an episode's season/episode number and title.
+    [ObservableProperty] private bool _isEditing;
+    [ObservableProperty] private string _editTitle = string.Empty;
+    [ObservableProperty] private string _editSeason = string.Empty;
+    [ObservableProperty] private string _editEpisode = string.Empty;
+
+    /// <summary>Seeds the edit fields from the current values and opens the inline editor.</summary>
+    public void BeginEdit()
+    {
+        EditTitle = Title;
+        EditSeason = SeasonNumber.ToString();
+        EditEpisode = EpisodeNumber.ToString();
+        IsEditing = true;
+    }
+
+    public void CancelEdit() => IsEditing = false;
 }
 
 /// <summary>A season grouping of episodes in the series detail view.</summary>
@@ -198,6 +215,51 @@ public partial class MediaDetailViewModel : ObservableObject
         await LoadAsync();
         if (next is not null)
             await _tracker.PlayAsync(next.Id);
+    }
+
+    [RelayCommand]
+    private void BeginEditEpisode(EpisodeRowViewModel? episode) => episode?.BeginEdit();
+
+    [RelayCommand]
+    private void CancelEditEpisode(EpisodeRowViewModel? episode) => episode?.CancelEdit();
+
+    [RelayCommand]
+    private async Task SaveEpisode(EpisodeRowViewModel? episode)
+    {
+        if (episode is null)
+            return;
+        if (!int.TryParse(episode.EditSeason, out var season) || season < 0)
+        {
+            _dialogs.ShowMessage("Season must be a whole number (0 or greater).", "Invalid season");
+            return;
+        }
+        if (!int.TryParse(episode.EditEpisode, out var number) || number < 0)
+        {
+            _dialogs.ShowMessage("Episode must be a whole number (0 or greater).", "Invalid episode");
+            return;
+        }
+
+        await _library.UpdateMediaItemAsync(new MediaItem
+        {
+            Id = episode.EpisodeId,
+            Title = string.IsNullOrWhiteSpace(episode.EditTitle) ? episode.Title : episode.EditTitle.Trim(),
+            SeasonNumber = season,
+            EpisodeNumber = number,
+        });
+        await LoadAsync();
+    }
+
+    [RelayCommand]
+    private async Task RemoveEpisode(EpisodeRowViewModel? episode)
+    {
+        if (episode is null)
+            return;
+        if (!_dialogs.Confirm(
+                $"Remove \"{episode.EpisodeLabel} · {episode.Title}\" from this series? The file on disk is not deleted.",
+                "Remove episode"))
+            return;
+        await _library.RemoveAsync(episode.EpisodeId);
+        await LoadAsync();
     }
 
     [RelayCommand]

@@ -87,6 +87,7 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type vm:EpisodeRowViewModel}">
                                             <Border Margin="0,3" Padding="8" Background="{StaticResource Surface}" CornerRadius="6">
+                                                <StackPanel>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="120" />
@@ -119,8 +120,45 @@
                                                         <Button Content="✓▶" Margin="6,0,0,0" ToolTip="Mark watched and play next"
                                                                 Command="{Binding DataContext.MarkWatchedAndPlayNextCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
                                                                 CommandParameter="{Binding}" />
+                                                        <Button Content="✎" Margin="6,0,0,0" Padding="10,6" ToolTip="Edit season/episode number or title"
+                                                                Command="{Binding DataContext.BeginEditEpisodeCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Content="🗑" Margin="6,0,0,0" Padding="10,6" ToolTip="Remove this episode"
+                                                                Command="{Binding DataContext.RemoveEpisodeCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                                CommandParameter="{Binding}" />
                                                     </StackPanel>
                                                 </Grid>
+
+                                                <!-- Inline editor: correct a mis-parsed season/episode number or title -->
+                                                <Border Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}"
+                                                        Margin="0,8,0,0" Padding="10" CornerRadius="4"
+                                                        Background="{StaticResource SurfaceAlt}">
+                                                    <StackPanel>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <StackPanel Margin="0,0,12,0">
+                                                                <TextBlock Text="Season" Foreground="{StaticResource TextMuted}" FontSize="11" />
+                                                                <TextBox Width="60" Text="{Binding EditSeason, UpdateSourceTrigger=PropertyChanged}" />
+                                                            </StackPanel>
+                                                            <StackPanel Margin="0,0,12,0">
+                                                                <TextBlock Text="Episode" Foreground="{StaticResource TextMuted}" FontSize="11" />
+                                                                <TextBox Width="60" Text="{Binding EditEpisode, UpdateSourceTrigger=PropertyChanged}" />
+                                                            </StackPanel>
+                                                            <StackPanel>
+                                                                <TextBlock Text="Title" Foreground="{StaticResource TextMuted}" FontSize="11" />
+                                                                <TextBox Width="320" Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                                            <Button Content="Save" Style="{StaticResource AccentButton}"
+                                                                    Command="{Binding DataContext.SaveEpisodeCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                                    CommandParameter="{Binding}" />
+                                                            <Button Content="Cancel" Margin="8,0,0,0"
+                                                                    Command="{Binding DataContext.CancelEditEpisodeCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                                    CommandParameter="{Binding}" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+                                                </StackPanel>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

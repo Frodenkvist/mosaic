@@ -117,7 +117,7 @@ public class MediaLibrary : IMediaLibrary
                 {
                     candidates.Add(new MediaScanCandidate(
                         MediaCandidateKind.Episode,
-                        Title: $"S{e.Season:D2}E{e.Episode:D2}",
+                        Title: EpisodePlaceholderTitle(e.Season, e.Episode),
                         FilePath: full,
                         FolderPath: folderPath,
                         SeriesTitle: e.ShowName,
@@ -140,7 +140,9 @@ public class MediaLibrary : IMediaLibrary
             }
         }
 
-        return candidates
+        var previewed = await ApplyCrossSeasonNumberingPreviewAsync(candidates, db);
+
+        return previewed
             .OrderBy(c => c.SeriesTitle ?? c.Title, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(c => c.SeasonNumber ?? 0)
             .ThenBy(c => c.EpisodeNumber ?? 0)
@@ -185,6 +187,7 @@ public class MediaLibrary : IMediaLibrary
         {
             var seriesTitle = group.Key;
             var series = await db.MediaItems
+                .Include(m => m.Episodes)
                 .FirstOrDefaultAsync(m => m.Kind == MediaKind.Series && m.Title == seriesTitle);
             if (series is null)
             {
@@ -216,6 +219,11 @@ public class MediaLibrary : IMediaLibrary
                 series.Episodes.Add(episode);
                 added.Add(episode);
             }
+
+            // Correct absolute (cross-season) numbering using the series' full episode set — the newly
+            // added episodes together with any already in the library (so a season imported on its own,
+            // or out of order, is anchored to the seasons already stored).
+            NormalizeEpisodeNumbers(series);
         }
 
         await db.SaveChangesAsync();
@@ -398,6 +406,94 @@ public class MediaLibrary : IMediaLibrary
             return Path.GetDirectoryName(episodeFolder) ?? episodeFolder;
         }
         return episodeFolder;
+    }
+
+    /// <summary>The auto-generated placeholder title for an unmatched episode (e.g. "S02E05").</summary>
+    internal static string EpisodePlaceholderTitle(int season, int episode) => $"S{season:D2}E{episode:D2}";
+
+    /// <summary>
+    /// Re-derives within-season episode numbers for a series numbered absolutely (continuously across
+    /// seasons), mutating the tracked episodes in place. Only an episode still carrying its
+    /// auto-generated <c>SxxExx</c> placeholder title is re-titled to match its corrected number; a
+    /// title from metadata or the user is preserved.
+    /// </summary>
+    private static void NormalizeEpisodeNumbers(MediaItem series)
+    {
+        var numbered = series.Episodes
+            .Where(e => e.SeasonNumber is not null && e.EpisodeNumber is not null)
+            .ToList();
+        if (numbered.Count == 0)
+            return;
+
+        var corrected = EpisodeNumbering.NormalizeWithinSeason(
+            numbered.Select(e => (Key: e, Season: e.SeasonNumber!.Value, Episode: e.EpisodeNumber!.Value)));
+
+        foreach (var episode in numbered)
+        {
+            var season = episode.SeasonNumber!.Value;
+            var oldEpisode = episode.EpisodeNumber!.Value;
+            if (!corrected.TryGetValue(episode, out var newEpisode) || newEpisode == oldEpisode)
+                continue;
+
+            if (episode.Title == EpisodePlaceholderTitle(season, oldEpisode))
+                episode.Title = EpisodePlaceholderTitle(season, newEpisode);
+            episode.EpisodeNumber = newEpisode;
+        }
+    }
+
+    /// <summary>
+    /// Rewrites episode candidates so the confirmation preview reflects inferred within-season
+    /// numbering for absolute-numbered series (see <see cref="EpisodeNumbering"/>), anchoring on the
+    /// series' already-stored episodes. Best-effort: any failure leaves the candidates untouched so a
+    /// scan never aborts over a preview nicety; <see cref="AddConfirmedAsync"/> remains authoritative.
+    /// </summary>
+    private static async Task<List<MediaScanCandidate>> ApplyCrossSeasonNumberingPreviewAsync(
+        List<MediaScanCandidate> candidates, MosaicDbContext db)
+    {
+        try
+        {
+            var episodes = candidates.Where(c => c.Kind == MediaCandidateKind.Episode).ToList();
+            if (episodes.Count == 0)
+                return candidates;
+
+            var stored = (await db.MediaItems.AsNoTracking()
+                    .Where(m => m.Kind == MediaKind.Episode
+                        && m.Parent != null
+                        && m.SeasonNumber != null
+                        && m.EpisodeNumber != null)
+                    .Select(m => new { SeriesTitle = m.Parent!.Title, Season = m.SeasonNumber!.Value, Episode = m.EpisodeNumber!.Value })
+                    .ToListAsync())
+                .GroupBy(e => e.SeriesTitle, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+            var corrected = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var group in episodes.GroupBy(c => c.SeriesTitle ?? "Unknown", StringComparer.OrdinalIgnoreCase))
+            {
+                var entries = new List<(string Key, int Season, int Episode)>();
+                foreach (var c in group)
+                    if (c.SeasonNumber is int s && c.EpisodeNumber is int ep)
+                        entries.Add((c.FilePath, s, ep)); // candidate file paths are never already-stored
+                if (stored.TryGetValue(group.Key, out var existing))
+                    for (var i = 0; i < existing.Count; i++)
+                        entries.Add(($"existing::{i}", existing[i].Season, existing[i].Episode));
+
+                foreach (var kv in EpisodeNumbering.NormalizeWithinSeason(entries))
+                    if (!kv.Key.StartsWith("existing::", StringComparison.Ordinal))
+                        corrected[kv.Key] = kv.Value;
+            }
+
+            return candidates
+                .Select(c => c.Kind == MediaCandidateKind.Episode
+                    && corrected.TryGetValue(c.FilePath, out var ep)
+                    && ep != c.EpisodeNumber
+                        ? c with { EpisodeNumber = ep, Title = EpisodePlaceholderTitle(c.SeasonNumber ?? 0, ep) }
+                        : c)
+                .ToList();
+        }
+        catch
+        {
+            return candidates; // preview-only; never break a scan
+        }
     }
 
     private static bool PathEquals(string a, string b) =>
