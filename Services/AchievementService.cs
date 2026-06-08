@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Mosaic.Data;
 using Mosaic.Models;
 
@@ -19,10 +21,16 @@ public class AchievementService : IAchievementService
     private static readonly SemaphoreSlim FetchGate = new(1, 1);
     private static readonly TimeSpan WatchDebounce = TimeSpan.FromMilliseconds(400);
 
+    // Bounded reconcile retry on session end: a few attempts so an unlock flushed as the game exits
+    // (just after the first scan reads the files) is still caught, without blocking shutdown.
+    private const int ReconcileAttempts = 5;
+    private static readonly TimeSpan ReconcileRetryDelay = TimeSpan.FromMilliseconds(400);
+
     private readonly IDbContextFactory<MosaicDbContext> _contextFactory;
     private readonly AppPaths _paths;
     private readonly ISettingsService _settings;
     private readonly SteamWebApiClient _client;
+    private readonly ILogger<AchievementService> _logger;
     private readonly IReadOnlyList<IAchievementUnlockSource> _sources;
 
     private readonly ConcurrentDictionary<int, GameWatcher> _watchers = new();
@@ -33,12 +41,14 @@ public class AchievementService : IAchievementService
         AppPaths paths,
         ISettingsService settings,
         SteamWebApiClient client,
-        IPlayTracker tracker)
+        IPlayTracker tracker,
+        ILogger<AchievementService> logger)
     {
         _contextFactory = contextFactory;
         _paths = paths;
         _settings = settings;
         _client = client;
+        _logger = logger;
         _sources = new IAchievementUnlockSource[] { new SteamEmulatorUnlockSource() };
 
         // Watch files only while a game is actually running; reconcile when it stops.
@@ -218,7 +228,7 @@ public class AchievementService : IAchievementService
         AchievementsChanged?.Invoke(this, gameId);
     }
 
-    public async Task<IReadOnlyList<Achievement>> ScanUnlocksAsync(int gameId, CancellationToken cancellationToken = default)
+    public async Task<ScanResult> ScanUnlocksAsync(int gameId, CancellationToken cancellationToken = default)
     {
         var gate = _scanGates.GetOrAdd(gameId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
@@ -232,37 +242,99 @@ public class AchievementService : IAchievementService
         }
     }
 
-    private async Task<IReadOnlyList<Achievement>> ScanUnlocksCoreAsync(int gameId, CancellationToken cancellationToken)
+    private async Task<ScanResult> ScanUnlocksCoreAsync(int gameId, CancellationToken cancellationToken)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var game = await db.Games.Include(g => g.Achievements).FirstOrDefaultAsync(g => g.Id == gameId, cancellationToken);
-        if (game is null || !game.AchievementTrackingEnabled || game.AchievementSource != AchievementSource.Auto)
-            return Array.Empty<Achievement>();
+        if (game is null)
+            return new ScanResult(Array.Empty<Achievement>(), new ScanDiagnostic { Note = "Game not found." });
+        if (!game.AchievementTrackingEnabled)
+            return new ScanResult(Array.Empty<Achievement>(),
+                new ScanDiagnostic { Note = "Achievement tracking is disabled for this game." });
+        if (game.AchievementSource != AchievementSource.Auto)
+            return new ScanResult(Array.Empty<Achievement>(),
+                new ScanDiagnostic { Note = "Achievement source is set to manual for this game." });
 
         var source = _sources.FirstOrDefault(s => s.CanHandle(game));
         if (source is null)
-            return Array.Empty<Achievement>();
+            return new ScanResult(Array.Empty<Achievement>(), new ScanDiagnostic
+            {
+                Note = "This game is not linked to a Steam App ID, so there are no emulator files to scan.",
+            });
 
-        var detected = source.ReadUnlocks(game);
-        if (detected.Count == 0)
-            return Array.Empty<Achievement>();
-
-        var byKey = game.Achievements.ToDictionary(a => a.ApiName, StringComparer.Ordinal);
-        var newlyUnlocked = new List<Achievement>();
-        foreach (var unlock in detected)
+        SourceReadResult read;
+        try
         {
-            // Unknown keys (no matching definition yet) are skipped — they map once the schema is resolved.
-            if (!byKey.TryGetValue(unlock.ApiName, out var ach) || ach.UnlockedAt is not null)
+            read = source.ReadUnlocks(game);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Reading emulator achievement files failed for game {GameId} ({Game})", gameId, game.Name);
+            return new ScanResult(Array.Empty<Achievement>(),
+                new ScanDiagnostic { Note = "Failed to read the emulator achievement files: " + ex.Message });
+        }
+
+        // Match parsed keys to stored definitions case-insensitively, with a separator/case-insensitive
+        // normalized fallback (emulator files often differ from the schema only in casing or underscores).
+        var byKey = new Dictionary<string, Achievement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var a in game.Achievements)
+            byKey.TryAdd(a.ApiName, a);
+        var byNormalized = new Dictionary<string, Achievement?>(StringComparer.Ordinal);
+        foreach (var a in game.Achievements)
+        {
+            var norm = Normalize(a.ApiName);
+            if (norm.Length == 0)
+                continue;
+            byNormalized[norm] = byNormalized.ContainsKey(norm) ? null : a; // null marks a collision (skip)
+        }
+
+        Achievement? Match(string key)
+        {
+            if (byKey.TryGetValue(key, out var exact))
+                return exact;
+            var norm = Normalize(key);
+            if (norm.Length > 0 && byNormalized.TryGetValue(norm, out var fuzzy) && fuzzy is not null)
+                return fuzzy;
+            return null;
+        }
+
+        var newlyUnlocked = new List<Achievement>();
+        var unmatched = new List<string>();
+        var matchedCount = 0;
+        foreach (var unlock in read.Unlocks)
+        {
+            var ach = Match(unlock.ApiName);
+            if (ach is null)
+            {
+                unmatched.Add(unlock.ApiName); // recorded in the diagnostic, never silently dropped
+                continue;
+            }
+            matchedCount++;
+            if (ach.UnlockedAt is not null)
                 continue; // monotonic: already-unlocked is never re-locked or re-raised
             ach.UnlockedAt = unlock.UnlockedAt ?? DateTimeOffset.UtcNow; // file time when known, else detection time
             ach.IsManualUnlock = false;
             newlyUnlocked.Add(ach);
         }
 
-        if (newlyUnlocked.Count == 0)
-            return Array.Empty<Achievement>();
+        var diagnostic = new ScanDiagnostic
+        {
+            Candidates = read.Candidates,
+            ParsedKeyCount = read.Unlocks.Count,
+            MatchedCount = matchedCount,
+            UnmatchedCount = unmatched.Count,
+            SampleUnmatchedKeys = unmatched.Take(10).ToList(),
+        };
 
-        await db.SaveChangesAsync(cancellationToken);
+        if (newlyUnlocked.Count > 0)
+            await db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Achievement scan for game {GameId} ({Game}): {Summary}",
+            gameId, game.Name, diagnostic.Summary);
+        if (diagnostic.UnmatchedCount > 0)
+            _logger.LogWarning("Game {GameId}: {Count} detected achievement key(s) matched no definition (sample: {Sample})",
+                gameId, diagnostic.UnmatchedCount, string.Join(", ", diagnostic.SampleUnmatchedKeys));
+
         foreach (var ach in newlyUnlocked)
         {
             AchievementUnlocked?.Invoke(this, new AchievementUnlockedEventArgs
@@ -273,8 +345,24 @@ public class AchievementService : IAchievementService
                 IconPath = ach.IconUnlockedPath,
             });
         }
-        AchievementsChanged?.Invoke(this, gameId);
-        return newlyUnlocked;
+        if (newlyUnlocked.Count > 0)
+            AchievementsChanged?.Invoke(this, gameId);
+
+        return new ScanResult(newlyUnlocked, diagnostic);
+    }
+
+    /// <summary>Lowercased, alphanumeric-only form of an achievement key, for tolerant key matching.</summary>
+    private static string Normalize(string key)
+    {
+        if (string.IsNullOrEmpty(key))
+            return string.Empty;
+        var sb = new StringBuilder(key.Length);
+        foreach (var c in key)
+        {
+            if (char.IsLetterOrDigit(c))
+                sb.Append(char.ToLowerInvariant(c));
+        }
+        return sb.ToString();
     }
 
     public async Task SetUnlockedAsync(int gameId, int achievementId, bool unlocked)
@@ -337,30 +425,58 @@ public class AchievementService : IAchievementService
                 old.Dispose();
             _watchers[gameId] = watcher;
         }
-        catch
+        catch (Exception ex)
         {
             // Watching is best-effort; the session-end reconcile scan still captures unlocks.
+            _logger.LogWarning(ex, "Could not start achievement file watching for game {GameId}", gameId);
         }
     }
 
     private void ScheduleScan(int gameId)
     {
         if (_watchers.TryGetValue(gameId, out var watcher))
-            watcher.Debounce(WatchDebounce, () => _ = ScanUnlocksAsync(gameId));
+            watcher.Debounce(WatchDebounce, () => _ = SafeScanAsync(gameId));
+    }
+
+    /// <summary>Runs a scan and logs (rather than swallows) any failure; used by the live watcher.</summary>
+    private async Task SafeScanAsync(int gameId)
+    {
+        try
+        {
+            await ScanUnlocksAsync(gameId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Live achievement scan failed for game {GameId}", gameId);
+        }
     }
 
     private async Task OnSessionEndedAsync(int gameId)
     {
         if (_watchers.TryRemove(gameId, out var watcher))
             watcher.Dispose();
-        try
+
+        // Final reconcile: a write can land in the gap (and watchers aren't 100% reliable), and some
+        // emulators flush their achievement file as the game exits — just after the first scan reads
+        // it. Retry a few times over a couple of seconds, stopping as soon as a scan finds an unlock.
+        for (var attempt = 0; attempt < ReconcileAttempts; attempt++)
         {
-            // Final reconcile: a write can land in the gap, and watchers aren't 100% reliable.
-            await ScanUnlocksAsync(gameId);
-        }
-        catch
-        {
-            // Best effort.
+            try
+            {
+                var result = await ScanUnlocksAsync(gameId);
+                if (result.NewlyUnlocked.Count > 0)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reconcile achievement scan failed for game {GameId}", gameId);
+            }
+
+            if (attempt < ReconcileAttempts - 1)
+            {
+                try { await Task.Delay(ReconcileRetryDelay); }
+                catch (TaskCanceledException) { return; }
+            }
         }
     }
 

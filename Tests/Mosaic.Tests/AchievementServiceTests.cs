@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Data;
 using Mosaic.Models;
 using Mosaic.Services;
@@ -100,7 +101,7 @@ public class AchievementServiceTests : IDisposable
 
         // Goldberg-style file written next to the game with ACH1 earned.
         WriteGoldberg(gameDir, ("ACH1", 1609459200));
-        var newly = await service.ScanUnlocksAsync(gameId);
+        var newly = (await service.ScanUnlocksAsync(gameId)).NewlyUnlocked;
 
         Assert.Single(newly);
         Assert.Equal("ACH1", newly[0].ApiName);
@@ -111,7 +112,7 @@ public class AchievementServiceTests : IDisposable
         // The emulator file disappears; a re-scan must NOT re-lock and must not re-raise.
         unlocked.Clear();
         File.Delete(Path.Combine(gameDir, "achievements.json"));
-        var second = await service.ScanUnlocksAsync(gameId);
+        var second = (await service.ScanUnlocksAsync(gameId)).NewlyUnlocked;
 
         Assert.Empty(second);
         Assert.Empty(unlocked);
@@ -128,7 +129,7 @@ public class AchievementServiceTests : IDisposable
 
         var before = DateTimeOffset.UtcNow.AddSeconds(-1);
         WriteGoldberg(gameDir, ("ACH1", 0)); // earned but no usable timestamp
-        var newly = await service.ScanUnlocksAsync(gameId);
+        var newly = (await service.ScanUnlocksAsync(gameId)).NewlyUnlocked;
 
         Assert.Single(newly);
         Assert.NotNull(newly[0].UnlockedAt);
@@ -230,6 +231,96 @@ public class AchievementServiceTests : IDisposable
         Assert.False(File.Exists(iconPath), "the cached achievement icon should be deleted on game removal");
     }
 
+    [Fact]
+    public async Task Scan_MatchesEmulatorKey_CaseInsensitively()
+    {
+        var (gameId, gameDir) = await AddLinkedGameAsync(appId: 9900010);
+        await ResolveSchemaAsync(gameId, ("ACH_Win", "First", 0));
+        var service = NewService("key", _ => Bytes());
+
+        // The emulator file spells the key in a different case than the schema.
+        WriteGoldberg(gameDir, ("ach_win", 1609459200));
+        var result = await service.ScanUnlocksAsync(gameId);
+
+        var newly = Assert.Single(result.NewlyUnlocked);
+        Assert.Equal("ACH_Win", newly.ApiName);           // matched the definition despite the casing
+        Assert.Equal(1, result.Diagnostic.MatchedCount);
+        Assert.Equal(0, result.Diagnostic.UnmatchedCount);
+    }
+
+    [Fact]
+    public async Task Scan_CountsUnmatchedKeys_InDiagnostic_WithoutLosingMatchedUnlock()
+    {
+        var (gameId, gameDir) = await AddLinkedGameAsync(appId: 9900011);
+        await ResolveSchemaAsync(gameId, ("ACH1", "First", 0));
+        var service = NewService("key", _ => Bytes());
+
+        // One key matches the schema; one does not (e.g. wrong App ID or stale schema).
+        WriteGoldberg(gameDir, ("ACH1", 1609459200), ("ZZ_UNKNOWN", 1609459200));
+        var result = await service.ScanUnlocksAsync(gameId);
+
+        Assert.Equal("ACH1", Assert.Single(result.NewlyUnlocked).ApiName); // matched unlock not lost
+        Assert.Equal(1, result.Diagnostic.MatchedCount);
+        Assert.Equal(1, result.Diagnostic.UnmatchedCount);
+        Assert.Contains("ZZ_UNKNOWN", result.Diagnostic.SampleUnmatchedKeys); // surfaced, not silently dropped
+    }
+
+    [Fact]
+    public async Task Scan_FindsFile_InLocalSaveRedirectedLocation()
+    {
+        const int appId = 9900012;
+        var (gameId, gameDir) = await AddLinkedGameAsync(appId);
+        await ResolveSchemaAsync(gameId, ("ACH1", "First", 0));
+        var service = NewService("key", _ => Bytes());
+
+        // gbe_fork redirects saves via steam_settings\local_save.txt -> "saves".
+        var settingsDir = Path.Combine(gameDir, "steam_settings");
+        Directory.CreateDirectory(settingsDir);
+        File.WriteAllText(Path.Combine(settingsDir, "local_save.txt"), "saves");
+        var saveDir = Path.Combine(gameDir, "saves", appId.ToString());
+        Directory.CreateDirectory(saveDir);
+        File.WriteAllText(Path.Combine(saveDir, "achievements.json"),
+            "{\"ACH1\":{\"earned\":true,\"earned_time\":1609459200}}");
+
+        var result = await service.ScanUnlocksAsync(gameId);
+
+        Assert.Equal("ACH1", Assert.Single(result.NewlyUnlocked).ApiName);
+    }
+
+    [Fact]
+    public async Task SessionEnded_ReconcileRetry_CapturesAnUnlockWrittenAsTheGameExits()
+    {
+        var (gameId, gameDir) = await AddLinkedGameAsync(appId: 9900013);
+        await ResolveSchemaAsync(gameId, ("ACH1", "First", 0));
+        var tracker = new FakePlayTracker();
+        var service = NewService("key", _ => Bytes(), tracker);
+
+        // Session ends with no file yet; the emulator flushes the unlock a moment later.
+        tracker.RaiseSessionEnded(gameId);
+        await Task.Delay(250); // let the first reconcile attempt run and find nothing
+        WriteGoldberg(gameDir, ("ACH1", 1609459200));
+
+        // The bounded retry should still catch it.
+        await WaitUntilAsync(async () => (await service.GetProgressAsync(gameId)).Unlocked == 1);
+        Assert.Equal((1, 1), await service.GetProgressAsync(gameId));
+    }
+
+    [Fact]
+    public async Task Scan_WithNoFile_ProducesDiagnostic_ExplainingWhy()
+    {
+        var (gameId, _) = await AddLinkedGameAsync(appId: 9900014);
+        await ResolveSchemaAsync(gameId, ("ACH1", "First", 0));
+        var service = NewService("key", _ => Bytes());
+
+        // No emulator file exists anywhere.
+        var result = await service.ScanUnlocksAsync(gameId);
+
+        Assert.Empty(result.NewlyUnlocked);
+        Assert.True(result.Diagnostic.LocationsConsidered > 0);   // it did search known locations
+        Assert.Equal(0, result.Diagnostic.LocationsFound);
+        Assert.Contains("No recognized achievement file", result.Diagnostic.Summary);
+    }
+
     // --- helpers ---
 
     private AchievementService NewService(string? apiKey, Func<HttpRequestMessage, HttpResponseMessage> responder,
@@ -238,7 +329,7 @@ public class AchievementServiceTests : IDisposable
         var client = new SteamWebApiClient(new HttpClient(new StubHttpMessageHandler(responder)));
         return new AchievementService(
             new TestDbContextFactory(_options), _paths, new AchievementSettingsStub(apiKey),
-            client, tracker ?? new FakePlayTracker());
+            client, tracker ?? new FakePlayTracker(), NullLogger<AchievementService>.Instance);
     }
 
     private async Task ResolveSchemaAsync(int gameId, params (string Name, string Display, int Hidden)[] defs)

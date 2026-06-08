@@ -265,11 +265,13 @@ public partial class GameDetailViewModel : ObservableObject
         try
         {
             AchievementStatus = "Scanning for unlocks…";
-            var newly = await _achievements.ScanUnlocksAsync(_gameId);
+            var result = await _achievements.ScanUnlocksAsync(_gameId);
             await LoadAchievementsAsync();
-            AchievementStatus = newly.Count > 0
-                ? $"Found {newly.Count} new unlock{(newly.Count == 1 ? "" : "s")}."
-                : "No new unlocks found.";
+            var count = result.NewlyUnlocked.Count;
+            // On a no-result scan, show the diagnostic (why nothing registered) rather than a bare message.
+            AchievementStatus = count > 0
+                ? $"Found {count} new unlock{(count == 1 ? "" : "s")}."
+                : $"No new unlocks. {result.Diagnostic.Summary}";
         }
         finally
         {

@@ -87,4 +87,91 @@ public class EmulatorAchievementParserTests
         Assert.Empty(EmulatorAchievementParser.ParseIni(""));
         Assert.Empty(EmulatorAchievementParser.ParseIni("just some text\nwith no sections"));
     }
+
+    [Fact]
+    public void Goldberg_FlatMap_OfBoolNumberOrString_IsEarned()
+    {
+        // Some emulator builds write a flat key -> truthy map with no nested object / timestamp.
+        var json = """
+        {
+          "ACH_A": true,
+          "ACH_B": 1,
+          "ACH_C": "1",
+          "ACH_D": false,
+          "ACH_E": 0
+        }
+        """;
+
+        var unlocks = EmulatorAchievementParser.ParseGoldbergJson(json);
+
+        Assert.Equal(3, unlocks.Count);
+        Assert.Contains(unlocks, u => u.ApiName == "ACH_A");
+        Assert.Contains(unlocks, u => u.ApiName == "ACH_B");
+        Assert.Contains(unlocks, u => u.ApiName == "ACH_C");
+        Assert.DoesNotContain(unlocks, u => u.ApiName == "ACH_D");
+        Assert.DoesNotContain(unlocks, u => u.ApiName == "ACH_E");
+        Assert.All(unlocks, u => Assert.Null(u.UnlockedAt)); // flat form carries no timestamp
+    }
+
+    [Fact]
+    public void Goldberg_UnlockTime_IsHonoredAsEarnedTimeAlias()
+    {
+        var json = """{ "ACH_X": { "earned": true, "unlock_time": 1609459200 } }""";
+
+        var win = Assert.Single(EmulatorAchievementParser.ParseGoldbergJson(json));
+        Assert.Equal("ACH_X", win.ApiName);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1609459200), win.UnlockedAt);
+    }
+
+    [Fact]
+    public void Ini_Ali213Style_HaveAchievedAndHaveAchievedTime()
+    {
+        // ALI213-style per-achievement section: HaveAchieved / HaveAchievedTime instead of Achieved/UnlockTime.
+        var ini = """
+        [ACH_WIN_ONE_GAME]
+        HaveAchieved=1
+        HaveAchievedTime=1609459200
+
+        [ACH_LOSE]
+        HaveAchieved=0
+        """;
+
+        var win = Assert.Single(EmulatorAchievementParser.ParseIni(ini));
+        Assert.Equal("ACH_WIN_ONE_GAME", win.ApiName);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1609459200), win.UnlockedAt);
+    }
+
+    [Fact]
+    public void Ini_FlatAchievements_LuaTableValues_SteamDataStyle()
+    {
+        // ALI213/3DM "SteamData\user_stats.ini": [ACHIEVEMENTS] with quoted keys and Lua-table values.
+        var ini = """
+        [ACHIEVEMENTS]
+        "area1" = {unlocked = true, time = 1766756089}
+        "oo" = {unlocked = true, time = 1766756102}
+        "locked_one" = {unlocked = false, time = 0}
+        "no_time" = {unlocked = true}
+        """;
+
+        var unlocks = EmulatorAchievementParser.ParseIni(ini);
+
+        Assert.Equal(3, unlocks.Count);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1766756089),
+            unlocks.Single(u => u.ApiName == "area1").UnlockedAt);          // quotes stripped, time parsed
+        Assert.Contains(unlocks, u => u.ApiName == "oo");
+        Assert.Null(unlocks.Single(u => u.ApiName == "no_time").UnlockedAt); // unlocked, no timestamp
+        Assert.DoesNotContain(unlocks, u => u.ApiName == "locked_one");      // unlocked = false
+    }
+
+    [Fact]
+    public void ParseFailure_IsReportedAsError_NotConfusedWithEmpty()
+    {
+        // Malformed JSON: distinguishable from a valid-but-empty file via the out error.
+        Assert.Empty(EmulatorAchievementParser.ParseGoldbergJson("{ not valid json", out var error));
+        Assert.NotNull(error);
+
+        // Valid JSON with nothing earned: no error, just empty.
+        Assert.Empty(EmulatorAchievementParser.ParseGoldbergJson("{}", out var noError));
+        Assert.Null(noError);
+    }
 }

@@ -58,10 +58,10 @@ public class GameDetailBusyTests
         public event EventHandler<int>? AchievementsChanged { add { } remove { } }
         public bool IsAutoResolutionAvailable => true;
 
-        public async Task<IReadOnlyList<Achievement>> ScanUnlocksAsync(int gameId, CancellationToken ct = default)
+        public async Task<ScanResult> ScanUnlocksAsync(int gameId, CancellationToken ct = default)
         {
             await _gate.Task;
-            return Array.Empty<Achievement>();
+            return new ScanResult(Array.Empty<Achievement>(), ScanDiagnostic.Empty);
         }
 
         public Task<IReadOnlyList<Achievement>> GetAchievementsAsync(int gameId) =>

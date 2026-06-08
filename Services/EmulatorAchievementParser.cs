@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Mosaic.Services;
 
@@ -20,8 +21,20 @@ public static class EmulatorAchievementParser
     /// <c>{ "earned": true, "earned_time": &lt;unix-seconds&gt; }</c>. The schema config file
     /// (a JSON array of definitions) is not this format and yields an empty result.
     /// </summary>
-    public static IReadOnlyList<ParsedUnlock> ParseGoldbergJson(string json)
+    public static IReadOnlyList<ParsedUnlock> ParseGoldbergJson(string json) =>
+        ParseGoldbergJson(json, out _);
+
+    /// <summary>
+    /// As <see cref="ParseGoldbergJson(string)"/>, but reports a parse <paramref name="error"/> when
+    /// the text is present but not valid JSON, so an unreadable/unknown file can be distinguished
+    /// from one that is simply absent or has nothing earned. Besides the canonical
+    /// <c>key -&gt; { earned, earned_time }</c> map, a flatter <c>key -&gt; true|1|"1"</c> map (no
+    /// nested object, no timestamp) is also accepted, and <c>unlock_time</c> is honored as an alias
+    /// for <c>earned_time</c>.
+    /// </summary>
+    public static IReadOnlyList<ParsedUnlock> ParseGoldbergJson(string json, out string? error)
     {
+        error = null;
         if (string.IsNullOrWhiteSpace(json))
             return Array.Empty<ParsedUnlock>();
 
@@ -34,13 +47,21 @@ public static class EmulatorAchievementParser
             var result = new List<ParsedUnlock>();
             foreach (var prop in doc.RootElement.EnumerateObject())
             {
+                // Flat map variant: key -> true / 1 / "1" (earned, no timestamp).
                 if (prop.Value.ValueKind != JsonValueKind.Object)
+                {
+                    if (IsTrue(prop.Value))
+                        result.Add(new ParsedUnlock(prop.Name, null));
                     continue;
+                }
+
                 if (!prop.Value.TryGetProperty("earned", out var earned) || !IsTrue(earned))
                     continue;
 
                 DateTimeOffset? when = null;
-                if (prop.Value.TryGetProperty("earned_time", out var t) && t.ValueKind == JsonValueKind.Number
+                if ((prop.Value.TryGetProperty("earned_time", out var t)
+                        || prop.Value.TryGetProperty("unlock_time", out t))
+                    && t.ValueKind == JsonValueKind.Number
                     && t.TryGetInt64(out var unix) && unix > 0)
                 {
                     when = DateTimeOffset.FromUnixTimeSeconds(unix);
@@ -49,8 +70,9 @@ public static class EmulatorAchievementParser
             }
             return result;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            error = "invalid JSON: " + ex.Message;
             return Array.Empty<ParsedUnlock>();
         }
     }
@@ -60,8 +82,17 @@ public static class EmulatorAchievementParser
     /// a per-achievement section with <c>Achieved=1</c> (and an optional <c>UnlockTime=</c>/<c>Time=</c>),
     /// and a flat <c>[Achievements]</c> section of <c>KEY=1</c> lines.
     /// </summary>
-    public static IReadOnlyList<ParsedUnlock> ParseIni(string text)
+    public static IReadOnlyList<ParsedUnlock> ParseIni(string text) => ParseIni(text, out _);
+
+    /// <summary>
+    /// As <see cref="ParseIni(string)"/>, but reports a parse <paramref name="error"/> (the INI
+    /// grammar is lenient, so this is rarely set). Per-achievement sections are recognized by an
+    /// <c>Achieved</c>/<c>HaveAchieved</c>/<c>State</c>/<c>Earned</c> truthy flag, and the unlock
+    /// time is read from <c>UnlockTime</c>/<c>Time</c>/<c>HaveAchievedTime</c>/<c>earned_time</c>.
+    /// </summary>
+    public static IReadOnlyList<ParsedUnlock> ParseIni(string text, out string? error)
     {
+        error = null;
         if (string.IsNullOrWhiteSpace(text))
             return Array.Empty<ParsedUnlock>();
 
@@ -73,24 +104,47 @@ public static class EmulatorAchievementParser
         {
             if (IsFlatAchievementsSection(section))
             {
-                // [Achievements] with KEY=1 lines (one row per achievement).
-                foreach (var (key, value) in entries)
+                // A flat [Achievements] section, in one of two shapes:
+                //   KEY=1                                        (SmartSteamEmu / simple)
+                //   "key" = {unlocked = true, time = 1700000000} (ALI213/3DM Lua-table SteamData)
+                foreach (var (rawKey, value) in entries)
                 {
-                    if (IsMetaKey(key) || !IsAchievedValue(value))
+                    var key = Unquote(rawKey);
+                    if (IsMetaKey(key))
                         continue;
-                    if (seen.Add(key))
-                        result.Add(new ParsedUnlock(key, null));
+
+                    var v = value.Trim();
+                    bool flatAchieved;
+                    DateTimeOffset? flatWhen = null;
+                    if (v.StartsWith('{'))
+                    {
+                        flatAchieved = LuaFlag(v, "unlocked") ?? LuaFlag(v, "achieved") ?? false;
+                        if (TryLuaLong(v, "time", out var flatUnix) && flatUnix > 0)
+                            flatWhen = DateTimeOffset.FromUnixTimeSeconds(flatUnix);
+                    }
+                    else
+                    {
+                        flatAchieved = IsAchievedValue(v);
+                    }
+
+                    if (flatAchieved && seen.Add(key))
+                        result.Add(new ParsedUnlock(key, flatWhen));
                 }
                 continue;
             }
 
-            // Per-achievement section: the section name is the achievement key.
-            if (!TryGet(entries, "Achieved", out var achieved) || !IsAchievedValue(achieved))
+            // Per-achievement section: the section name is the achievement key. Different emulators
+            // spell the "is unlocked" flag differently.
+            if (!(TryGet(entries, "Achieved", out var achieved)
+                    || TryGet(entries, "HaveAchieved", out achieved)
+                    || TryGet(entries, "State", out achieved)
+                    || TryGet(entries, "Earned", out achieved))
+                || !IsAchievedValue(achieved))
                 continue;
 
             DateTimeOffset? when = null;
             if ((TryGet(entries, "UnlockTime", out var ut) || TryGet(entries, "Time", out ut)
-                    || TryGet(entries, "earned_time", out ut))
+                    || TryGet(entries, "HaveAchievedTime", out ut) || TryGet(entries, "earned_time", out ut))
                 && long.TryParse(ut, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unix) && unix > 0)
             {
                 when = DateTimeOffset.FromUnixTimeSeconds(unix);
@@ -124,6 +178,35 @@ public static class EmulatorAchievementParser
 
     private static bool IsMetaKey(string key) =>
         key.Equals("Count", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Strips surrounding single/double quotes and whitespace from an INI key.</summary>
+    private static string Unquote(string s)
+    {
+        var t = s.Trim();
+        if (t.Length >= 2 && (t[0] == '"' || t[0] == '\'') && t[^1] == t[0])
+            t = t[1..^1];
+        return t.Trim();
+    }
+
+    /// <summary>Reads a Lua-table boolean field, e.g. <c>unlocked = true</c> / <c>unlocked = 1</c>; null if absent.</summary>
+    private static bool? LuaFlag(string table, string name)
+    {
+        var m = Regex.Match(table, name + @"\s*=\s*(true|false|1|0)", RegexOptions.IgnoreCase);
+        if (!m.Success)
+            return null;
+        var v = m.Groups[1].Value;
+        return v.Equals("true", StringComparison.OrdinalIgnoreCase) || v == "1";
+    }
+
+    /// <summary>Reads a Lua-table integer field, e.g. <c>time = 1700000000</c>.</summary>
+    private static bool TryLuaLong(string table, string name, out long value)
+    {
+        var m = Regex.Match(table, name + @"\s*=\s*(\d+)", RegexOptions.IgnoreCase);
+        if (m.Success && long.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
+            return true;
+        value = 0;
+        return false;
+    }
 
     private static bool TryGet(List<(string Key, string Value)> entries, string key, out string value)
     {

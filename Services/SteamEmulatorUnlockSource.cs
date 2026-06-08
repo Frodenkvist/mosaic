@@ -16,9 +16,18 @@ public interface IAchievementUnlockSource
     /// <summary>Candidate file paths this source reads, whether or not they currently exist (used to set up watching).</summary>
     IReadOnlyList<string> LocateFiles(Game game);
 
-    /// <summary>Reads the currently-unlocked achievements from whichever candidate files exist, merged.</summary>
-    IReadOnlyList<ParsedUnlock> ReadUnlocks(Game game);
+    /// <summary>
+    /// Reads the currently-unlocked achievements from whichever candidate files exist, merged, and
+    /// also reports per-candidate diagnostic info (existed / parsed-key count / read-or-parse error)
+    /// so a scan that finds nothing can be explained.
+    /// </summary>
+    SourceReadResult ReadUnlocks(Game game);
 }
+
+/// <summary>The unlocks read from a game's emulator files plus the per-candidate diagnostic info.</summary>
+public sealed record SourceReadResult(
+    IReadOnlyList<ParsedUnlock> Unlocks,
+    IReadOnlyList<ScanCandidateInfo> Candidates);
 
 /// <summary>
 /// Reads unlocks from the files written by common Steam emulators (Goldberg/GSE JSON and
@@ -44,27 +53,51 @@ public class SteamEmulatorUnlockSource : IAchievementUnlockSource
                 candidates.Add(path);
         }
 
-        // Per-user save roots written by the various emulators.
+        // The Goldberg/GSE JSON unlock map lives under an appid-named folder in a per-user save root.
+        void AddGoldberg(string? root)
+        {
+            if (root is null) return;
+            Add(Path.Combine(root, "Goldberg SteamEmu Saves", appIdStr, "achievements.json"));
+            Add(Path.Combine(root, "GSE Saves", appIdStr, "achievements.json"));
+        }
+
+        // CODEX/RUNE/ALI213 and similar drop an INI under <root>\Steam\<emu>\<appid>\.
+        void AddSteamEmuInis(string? root)
+        {
+            if (root is null) return;
+            foreach (var emu in new[] { "CODEX", "RUNE", "ALI213", "VOKSI", "TENOKE", "Goldberg" })
+            {
+                Add(Path.Combine(root, "Steam", emu, appIdStr, "achievements.ini"));
+                Add(Path.Combine(root, "Steam", emu, appIdStr, "stats", "achievements.ini"));
+            }
+        }
+
         var roaming = SafeFolder(Environment.SpecialFolder.ApplicationData);
+        var local = SafeFolder(Environment.SpecialFolder.LocalApplicationData);
         var publicDocs = SafeFolder(Environment.SpecialFolder.CommonDocuments);
         var myDocs = SafeFolder(Environment.SpecialFolder.MyDocuments);
 
-        if (roaming is not null)
+        // %AppData% and %LocalAppData%: Goldberg/GSE saves and Steam-emulator INIs.
+        foreach (var root in new[] { roaming, local })
         {
-            Add(Path.Combine(roaming, "Goldberg SteamEmu Saves", appIdStr, "achievements.json"));
-            Add(Path.Combine(roaming, "GSE Saves", appIdStr, "achievements.json"));
-            Add(Path.Combine(roaming, "Steam", "CODEX", appIdStr, "achievements.ini"));
-            Add(Path.Combine(roaming, "SmartSteamEmu", appIdStr, "stats", "achievements.ini"));
+            AddGoldberg(root);
+            AddSteamEmuInis(root);
+            if (root is null) continue;
+            Add(Path.Combine(root, "SmartSteamEmu", appIdStr, "stats", "achievements.ini"));
+            Add(Path.Combine(root, "EMPRESS", appIdStr, "remote", appIdStr, "achievements.json"));
         }
+
+        // Public/My Documents: CODEX/RUNE/ALI213 INIs and online-fix's own layout.
         foreach (var docs in new[] { publicDocs, myDocs })
         {
             if (docs is null)
                 continue;
-            Add(Path.Combine(docs, "Steam", "CODEX", appIdStr, "achievements.ini"));
-            Add(Path.Combine(docs, "Steam", "RUNE", appIdStr, "achievements.ini"));
+            AddSteamEmuInis(docs);
+            Add(Path.Combine(docs, "OnlineFix", appIdStr, "Stats", "achievements.ini"));
+            Add(Path.Combine(docs, "OnlineFix", appIdStr, "achievements.json"));
         }
 
-        // Per-game install folder (emulator dropped next to the executable).
+        // Per-game install folder (the emulator was dropped next to the executable).
         var gameDir = SafeDir(game.ExecutablePath);
         if (gameDir is not null)
         {
@@ -72,48 +105,95 @@ public class SteamEmulatorUnlockSource : IAchievementUnlockSource
             Add(Path.Combine(gameDir, "achievements.json"));
             Add(Path.Combine(gameDir, "SteamEmu", appIdStr, "stats", "achievements.ini"));
             Add(Path.Combine(gameDir, "stats", "achievements.ini"));
+            Add(Path.Combine(gameDir, "ALI213", "Stats", "achievements.ini"));
+            Add(Path.Combine(gameDir, "Stats", "achievements.ini"));
+            // ALI213/3DM-style "SteamData" wrapper: a flat [ACHIEVEMENTS] Lua-table INI.
+            Add(Path.Combine(gameDir, "SteamData", "user_stats.ini"));
+            Add(Path.Combine(gameDir, "SteamData", "Achievements.ini"));
+
+            // Goldberg/gbe_fork can redirect saves via steam_settings\local_save.txt, whose contents
+            // are a path (absolute, or relative to the game folder) holding the saves instead.
+            foreach (var saveRoot in ResolveLocalSaveRoots(gameDir))
+            {
+                Add(Path.Combine(saveRoot, appIdStr, "achievements.json"));
+                Add(Path.Combine(saveRoot, "achievements.json"));
+            }
         }
 
         return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    public IReadOnlyList<ParsedUnlock> ReadUnlocks(Game game)
+    /// <summary>
+    /// Reads a Goldberg/gbe_fork <c>steam_settings\local_save.txt</c> redirect, if present, and
+    /// returns the save root(s) it points at (absolute, or resolved relative to the game folder).
+    /// </summary>
+    private static IEnumerable<string> ResolveLocalSaveRoots(string gameDir)
+    {
+        var localSave = Path.Combine(gameDir, "steam_settings", "local_save.txt");
+        string rel;
+        try
+        {
+            if (!File.Exists(localSave))
+                yield break;
+            rel = File.ReadAllText(localSave).Trim();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            yield break;
+        }
+        if (rel.Length == 0)
+            yield break;
+
+        var resolved = Path.IsPathRooted(rel) ? rel : Path.Combine(gameDir, rel);
+        yield return resolved;
+    }
+
+    public SourceReadResult ReadUnlocks(Game game)
     {
         // Merge across every existing candidate file: an achievement is unlocked if any file says
-        // so; prefer the entry that carries a (earliest) timestamp.
+        // so; prefer the entry that carries a (earliest) timestamp. Every candidate considered is
+        // recorded — existed, parsed-key count, and any error — for the scan diagnostic.
         var merged = new Dictionary<string, ParsedUnlock>(StringComparer.Ordinal);
+        var candidates = new List<ScanCandidateInfo>();
 
         foreach (var file in LocateFiles(game))
         {
-            string text;
+            var existed = false;
+            var count = 0;
+            string? error = null;
             try
             {
-                if (!File.Exists(file))
-                    continue;
-                text = File.ReadAllText(file);
+                if (File.Exists(file))
+                {
+                    existed = true;
+                    var text = File.ReadAllText(file);
+                    var parsed = file.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                        ? EmulatorAchievementParser.ParseGoldbergJson(text, out error)
+                        : EmulatorAchievementParser.ParseIni(text, out error);
+                    count = parsed.Count;
+
+                    foreach (var unlock in parsed)
+                    {
+                        if (!merged.TryGetValue(unlock.ApiName, out var existing))
+                            merged[unlock.ApiName] = unlock;
+                        else if (existing.UnlockedAt is null && unlock.UnlockedAt is not null)
+                            merged[unlock.ApiName] = unlock;
+                        else if (unlock.UnlockedAt is not null && existing.UnlockedAt is not null
+                                 && unlock.UnlockedAt < existing.UnlockedAt)
+                            merged[unlock.ApiName] = unlock;
+                    }
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                continue; // file is locked/being written; a later scan or the reconcile pass will catch it
+                // File is locked/being written; a later scan or the reconcile pass will catch it.
+                error = ex.GetType().Name;
             }
 
-            var parsed = file.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-                ? EmulatorAchievementParser.ParseGoldbergJson(text)
-                : EmulatorAchievementParser.ParseIni(text);
-
-            foreach (var unlock in parsed)
-            {
-                if (!merged.TryGetValue(unlock.ApiName, out var existing))
-                    merged[unlock.ApiName] = unlock;
-                else if (existing.UnlockedAt is null && unlock.UnlockedAt is not null)
-                    merged[unlock.ApiName] = unlock;
-                else if (unlock.UnlockedAt is not null && existing.UnlockedAt is not null
-                         && unlock.UnlockedAt < existing.UnlockedAt)
-                    merged[unlock.ApiName] = unlock;
-            }
+            candidates.Add(new ScanCandidateInfo(file, existed, count, error));
         }
 
-        return merged.Values.ToList();
+        return new SourceReadResult(merged.Values.ToList(), candidates);
     }
 
     private static string? SafeFolder(Environment.SpecialFolder folder)

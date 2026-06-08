@@ -43,8 +43,12 @@ public interface IAchievementService
     /// <summary>Re-resolves a linked game's achievement definitions from Steam, preserving unlock state.</summary>
     Task RefreshAsync(int gameId, CancellationToken cancellationToken = default);
 
-    /// <summary>Scans the game's emulator files for unlocks, persists any new ones, and returns those newly unlocked.</summary>
-    Task<IReadOnlyList<Achievement>> ScanUnlocksAsync(int gameId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Scans the game's emulator files for unlocks, persists any new ones, and returns a result with
+    /// the newly-unlocked achievements plus a <see cref="ScanDiagnostic"/> explaining what was
+    /// searched, found, parsed, and matched (so a scan that finds nothing can be explained).
+    /// </summary>
+    Task<ScanResult> ScanUnlocksAsync(int gameId, CancellationToken cancellationToken = default);
 
     /// <summary>Manually sets an achievement's unlocked/locked state.</summary>
     Task SetUnlockedAsync(int gameId, int achievementId, bool unlocked);
