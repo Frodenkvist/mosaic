@@ -110,6 +110,15 @@
                 </DockPanel>
             </Border>
 
+            <!-- In-game overlay -->
+            <TextBlock Text="In-game overlay" Foreground="{StaticResource TextPrimary}" FontSize="16"
+                       FontWeight="SemiBold" Margin="0,22,0,0" />
+            <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,2,0,8" TextWrapping="Wrap"
+                       Text="Show achievement unlocks on top of games launched through Mosaic. The overlay is invisible until an achievement pops. Works for windowed and borderless games; for exclusive-fullscreen games the sound still plays." />
+            <CheckBox Content="Show in-game achievement overlay" IsChecked="{Binding GameOverlayEnabled}" />
+            <CheckBox Content="Play a sound when an achievement unlocks" IsChecked="{Binding AchievementSoundEnabled}"
+                      Margin="0,8,0,0" />
+
             <!-- Updates -->
             <TextBlock Text="Updates" Foreground="{StaticResource TextPrimary}" FontSize="16"
                        FontWeight="SemiBold" Margin="0,22,0,0" />

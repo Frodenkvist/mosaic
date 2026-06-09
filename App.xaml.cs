@@ -44,6 +44,10 @@ public partial class App : Application
         // when the system media-controls API publishes nothing for the user's player).
         _host.Services.GetRequiredService<SystemMediaWatchObserver>();
 
+        // Instantiate the overlay service so it subscribes to play-session and achievement events
+        // for the app lifetime (shows the in-game overlay + plays the achievement chime).
+        _host.Services.GetRequiredService<AchievementOverlayService>();
+
         var mainVm = _host.Services.GetRequiredService<MainViewModel>();
         var window = new MainWindow { DataContext = mainVm };
         MainWindow = window;
@@ -73,6 +77,12 @@ public partial class App : Application
         services.AddSingleton<IArtworkService, ArtworkService>();
         services.AddSingleton<IAchievementService, AchievementService>();
         services.AddSingleton<IDialogService, DialogService>();
+
+        // In-game achievement overlay: a transparent, click-through window over launched games that
+        // shows unlock toasts and plays a chime. The factory creates the WPF window (Views layer).
+        services.AddSingleton<IAchievementOverlayFactory, Views.AchievementOverlayFactory>();
+        services.AddSingleton<IAchievementSoundPlayer, AchievementSoundPlayer>();
+        services.AddSingleton<AchievementOverlayService>();
 
         // Media domain (parallel to the game services; independent of them).
         services.AddSingleton<IMediaArtworkService, MediaArtworkService>();

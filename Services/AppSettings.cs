@@ -32,4 +32,17 @@ public class AppSettings
 
     /// <summary>UTC time of the last completed update check, used to throttle automatic checks.</summary>
     public DateTime? LastUpdateCheckUtc { get; set; }
+
+    /// <summary>
+    /// Whether the transparent in-game overlay is shown over games launched through Mosaic (so
+    /// achievement toasts appear on top of the running game). Defaults to enabled; an older
+    /// settings.json that predates this field deserializes to this default (true).
+    /// </summary>
+    public bool GameOverlayEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Whether a short sound plays when an achievement unlocks during play. Defaults to enabled;
+    /// an older settings.json that predates this field deserializes to this default (true).
+    /// </summary>
+    public bool AchievementSoundEnabled { get; set; } = true;
 }

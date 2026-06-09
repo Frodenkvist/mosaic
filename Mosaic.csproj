@@ -15,7 +15,7 @@
          the SDK derives them from Version, so the running app's reported version (which the updater
          compares against the latest release tag) tracks this value. Bump only this one number. -->
     <PropertyGroup>
-        <Version>1.2.0</Version>
+        <Version>1.3.0</Version>
         <Product>Mosaic</Product>
         <Company>Mosaic</Company>
         <Authors>Mosaic</Authors>
@@ -38,6 +38,9 @@
     <ItemGroup>
         <Resource Include="Mosaic.ico" />
         <Resource Include="Mosaic.png" />
+        <!-- Short "achievement unlocked" chime played by the in-game overlay; loaded as a
+             resource stream by AchievementSoundPlayer. -->
+        <Resource Include="Assets\achievement.wav" />
     </ItemGroup>
 
     <ItemGroup>

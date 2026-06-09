@@ -12,8 +12,8 @@ public partial class SettingsViewModel : ObservableObject
     private readonly SteamGridDbClient _client;
     private readonly IUpdateService _updates;
 
-    // Suppresses the auto-update toggle's auto-save while Load() seeds it from settings.
-    private bool _suppressAutoUpdateSave;
+    // Suppresses the auto-saving toggles' writes while Load() seeds them from settings.
+    private bool _suppressToggleSave;
 
     public ObservableCollection<string> ScanFolders { get; } = new();
     public ObservableCollection<string> MediaFolders { get; } = new();
@@ -57,6 +57,12 @@ public partial class SettingsViewModel : ObservableObject
     private bool _automaticUpdatesEnabled = true;
 
     [ObservableProperty]
+    private bool _gameOverlayEnabled = true;
+
+    [ObservableProperty]
+    private bool _achievementSoundEnabled = true;
+
+    [ObservableProperty]
     private string? _updateStatusMessage;
 
     [ObservableProperty]
@@ -84,9 +90,11 @@ public partial class SettingsViewModel : ObservableObject
         TmdbApiKey = _settings.Current.TmdbApiKey;
         PreferredMediaPlayerPath = _settings.Current.PreferredMediaPlayerPath;
 
-        _suppressAutoUpdateSave = true;
+        _suppressToggleSave = true;
         AutomaticUpdatesEnabled = _settings.Current.AutomaticUpdatesEnabled;
-        _suppressAutoUpdateSave = false;
+        GameOverlayEnabled = _settings.Current.GameOverlayEnabled;
+        AchievementSoundEnabled = _settings.Current.AchievementSoundEnabled;
+        _suppressToggleSave = false;
 
         StatusMessage = null;
         KeyStatusMessage = null;
@@ -96,9 +104,27 @@ public partial class SettingsViewModel : ObservableObject
     /// <summary>The automatic-update toggle auto-saves immediately (no Save click needed).</summary>
     partial void OnAutomaticUpdatesEnabledChanged(bool value)
     {
-        if (_suppressAutoUpdateSave)
+        if (_suppressToggleSave)
             return;
         _settings.Current.AutomaticUpdatesEnabled = value;
+        _ = _settings.SaveAsync();
+    }
+
+    /// <summary>The in-game overlay toggle auto-saves immediately; takes effect on the next launch.</summary>
+    partial void OnGameOverlayEnabledChanged(bool value)
+    {
+        if (_suppressToggleSave)
+            return;
+        _settings.Current.GameOverlayEnabled = value;
+        _ = _settings.SaveAsync();
+    }
+
+    /// <summary>The achievement-sound toggle auto-saves immediately; takes effect on the next unlock.</summary>
+    partial void OnAchievementSoundEnabledChanged(bool value)
+    {
+        if (_suppressToggleSave)
+            return;
+        _settings.Current.AchievementSoundEnabled = value;
         _ = _settings.SaveAsync();
     }
 
