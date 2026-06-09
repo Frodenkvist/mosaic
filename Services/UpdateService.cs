@@ -62,8 +62,16 @@ public partial class UpdateService : IUpdateService
             result = new UpdateCheckResult(UpdateCheckStatus.Failed, Message: "Could not check for updates.");
         }
 
-        // Record that a check actually ran (any outcome) so the throttle advances.
-        await TouchLastCheckAsync();
+        // Advance the daily throttle only for an *automatic* check that leaves nothing for the user
+        // to act on. Two deliberate exclusions:
+        //   • A forced, user-initiated check never touches this clock — otherwise clicking "Check
+        //     for updates" would push the window forward and suppress the next startup check for
+        //     24h, making auto-update-on-startup look broken.
+        //   • When an update IS available we also leave the clock untouched, so the next launch
+        //     re-checks and re-prompts. A declined ("remind me later") update should resurface on
+        //     the next launch rather than disappear for a day.
+        if (!force && result.Status != UpdateCheckStatus.UpdateAvailable)
+            await TouchLastCheckAsync();
 
         if (result.Status == UpdateCheckStatus.UpdateAvailable && result.Update is { } info)
             UpdateAvailable?.Invoke(this, info);
