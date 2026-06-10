@@ -23,6 +23,14 @@ public static class SuspendedProcessLauncher
     private const uint CREATE_SUSPENDED = 0x00000004;
 
     /// <summary>
+    /// Win32 <c>ERROR_ELEVATION_REQUIRED</c>: the target executable's manifest demands
+    /// administrator rights. <c>CreateProcess</c> cannot elevate — only the shell
+    /// (<c>ShellExecute</c>) can raise the UAC prompt — so this is surfaced distinctly via
+    /// <see cref="ElevationRequiredException"/> so the caller can relaunch through the shell.
+    /// </summary>
+    private const int ERROR_ELEVATION_REQUIRED = 740;
+
+    /// <summary>
     /// Creates the process suspended. Returns a <see cref="SuspendedProcess"/> whose
     /// primary thread is still suspended; the caller assigns it to a job and then calls
     /// <see cref="SuspendedProcess.Resume"/>.
@@ -56,7 +64,12 @@ public static class SuspendedProcessLauncher
             lpProcessInformation: out PROCESS_INFORMATION pi);
 
         if (!created)
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"CreateProcess failed for '{executablePath}'.");
+        {
+            int error = Marshal.GetLastWin32Error();
+            if (error == ERROR_ELEVATION_REQUIRED)
+                throw new ElevationRequiredException(executablePath);
+            throw new Win32Exception(error, $"CreateProcess failed for '{executablePath}'.");
+        }
 
         var mainThread = new SafeThreadHandle(pi.hThread);
         try
@@ -160,6 +173,22 @@ public sealed class SuspendedProcess
         _mainThread.Resume();
         _mainThread.Dispose();
     }
+}
+
+/// <summary>
+/// Thrown by <see cref="SuspendedProcessLauncher.LaunchSuspended"/> when the target executable's
+/// manifest requires administrator elevation. <c>CreateProcess</c> cannot elevate, so the caller
+/// must relaunch the executable through the shell (which raises the UAC prompt) and forgo
+/// job-object tracking — an elevated child cannot be assigned to a medium-integrity job.
+/// </summary>
+public sealed class ElevationRequiredException : Exception
+{
+    public ElevationRequiredException(string executablePath)
+        : base($"'{executablePath}' requires administrator elevation; CreateProcess cannot elevate.")
+        => ExecutablePath = executablePath;
+
+    /// <summary>The executable that demanded elevation.</summary>
+    public string ExecutablePath { get; }
 }
 
 /// <summary>SafeHandle for a Win32 thread handle.</summary>

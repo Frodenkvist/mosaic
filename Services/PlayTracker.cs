@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,9 @@ public class PlayTracker : IPlayTracker
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan RealExeAppearTimeout = TimeSpan.FromSeconds(120);
+
+    /// <summary>Win32 <c>ERROR_CANCELLED</c>: the user dismissed the UAC elevation prompt.</summary>
+    private const int ERROR_CANCELLED = 1223;
 
     private readonly IDbContextFactory<MosaicDbContext> _contextFactory;
     private readonly ConcurrentDictionary<int, DateTimeOffset> _runningSince = new();
@@ -48,6 +52,13 @@ public class PlayTracker : IPlayTracker
             suspended = SuspendedProcessLauncher.LaunchSuspended(
                 game.ExecutablePath, game.LaunchArguments, ResolveWorkingDirectory(game));
         }
+        catch (ElevationRequiredException)
+        {
+            // The executable's manifest demands administrator rights. CreateProcess cannot
+            // elevate (only the shell can), so relaunch through ShellExecute, which raises the
+            // UAC prompt — just as double-clicking it in Explorer does.
+            return await LaunchElevatedAsync(game);
+        }
         catch
         {
             return false; // the executable exists but could not be started; record nothing
@@ -55,17 +66,62 @@ public class PlayTracker : IPlayTracker
 
         var tracker = CreateTrackerAndAssign(suspended.Process);
         suspended.Resume();
-        var process = suspended.Process;
 
+        await StartTrackingAsync(game, tracker, suspended.Process);
+        return true;
+    }
+
+    /// <summary>
+    /// Launches a game whose manifest requires elevation through <c>ShellExecute</c>
+    /// (<see cref="ProcessStartInfo.UseShellExecute"/>), which raises the UAC prompt. An
+    /// elevated child cannot be captured by our medium-integrity job object, so the session is
+    /// tracked by the launched process's own lifetime (or the <see cref="Game.RealExecutableName"/>
+    /// poller, which works by process name and needs no handle).
+    /// </summary>
+    private async Task<bool> LaunchElevatedAsync(Game game)
+    {
+        Process? process;
+        try
+        {
+            process = Process.Start(new ProcessStartInfo
+            {
+                FileName = game.ExecutablePath,
+                Arguments = game.LaunchArguments ?? string.Empty,
+                WorkingDirectory = ResolveWorkingDirectory(game),
+                UseShellExecute = true, // route through ShellExecuteEx so the manifest triggers UAC
+            });
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == ERROR_CANCELLED)
+        {
+            return false; // the user declined the UAC prompt; nothing to record
+        }
+        catch
+        {
+            return false; // the shell could not start it; record nothing
+        }
+
+        if (process is null)
+            return false; // no new process was started (e.g. handed off to a running instance)
+
+        await StartTrackingAsync(game, tracker: null, process);
+        return true;
+    }
+
+    /// <summary>
+    /// Records an open session for a just-launched <paramref name="process"/>, marks the game
+    /// running, fires <see cref="SessionStarted"/>, and tracks the session to completion in the
+    /// background. Shared by the suspended-launch and elevated-launch paths.
+    /// </summary>
+    private async Task StartTrackingAsync(Game game, JobObjectTracker? tracker, Process process)
+    {
         // Persist an open session immediately so it survives an unexpected close.
         var startedAt = DateTimeOffset.UtcNow;
-        var sessionId = await CreateOpenSessionAsync(gameId, startedAt);
-        _runningSince[gameId] = startedAt;
-        SessionStarted?.Invoke(this, gameId);
+        var sessionId = await CreateOpenSessionAsync(game.Id, startedAt);
+        _runningSince[game.Id] = startedAt;
+        SessionStarted?.Invoke(this, game.Id);
 
         // Track to completion in the background; do not block the caller (the UI).
         _ = Task.Run(() => TrackToCompletionAsync(game, tracker, process, sessionId));
-        return true;
     }
 
     private async Task TrackToCompletionAsync(Game game, JobObjectTracker? tracker, Process process, int sessionId)
