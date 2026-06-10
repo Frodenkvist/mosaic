@@ -36,6 +36,7 @@ public class GameDetailBusyTests
         Assert.False(vm.UnlinkCommand.CanExecute(null));
         Assert.False(vm.AddManualAchievementCommand.CanExecute(null));
         Assert.False(vm.ToggleAchievementCommand.CanExecute(null));
+        Assert.False(vm.GenerateSchemaCommand.CanExecute(null));
 
         // Let the scan finish; everything is runnable again.
         achievements.Release();
@@ -73,6 +74,8 @@ public class GameDetailBusyTests
         public Task SetUnlinkedAsync(int gameId) => Task.CompletedTask;
         public Task SetSourceAsync(int gameId, bool enabled, AchievementSource source) => Task.CompletedTask;
         public Task RefreshAsync(int gameId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<SchemaWriteResult> GenerateEmulatorSchemaAsync(int gameId, bool overwrite = false, CancellationToken ct = default) =>
+            Task.FromResult(new SchemaWriteResult());
         public Task SetUnlockedAsync(int gameId, int achievementId, bool unlocked) => Task.CompletedTask;
         public Task<Achievement> AddManualAchievementAsync(int gameId, string displayName, string? description = null) =>
             Task.FromResult(new Achievement { GameId = gameId, ApiName = "m", DisplayName = displayName });

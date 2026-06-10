@@ -206,6 +206,7 @@ public class AchievementOverlayServiceTests
         public Task SetUnlinkedAsync(int gameId) => throw new NotSupportedException();
         public Task SetSourceAsync(int gameId, bool enabled, AchievementSource source) => throw new NotSupportedException();
         public Task RefreshAsync(int gameId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SchemaWriteResult> GenerateEmulatorSchemaAsync(int gameId, bool overwrite = false, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ScanResult> ScanUnlocksAsync(int gameId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task SetUnlockedAsync(int gameId, int achievementId, bool unlocked) => throw new NotSupportedException();
         public Task<Achievement> AddManualAchievementAsync(int gameId, string displayName, string? description = null) => throw new NotSupportedException();

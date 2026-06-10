@@ -320,6 +320,7 @@ public class AchievementService : IAchievementService
         var diagnostic = new ScanDiagnostic
         {
             Candidates = read.Candidates,
+            FoundSaveFolder = read.FoundSaveFolder,
             ParsedKeyCount = read.Unlocks.Count,
             MatchedCount = matchedCount,
             UnmatchedCount = unmatched.Count,
@@ -363,6 +364,75 @@ public class AchievementService : IAchievementService
                 sb.Append(char.ToLowerInvariant(c));
         }
         return sb.ToString();
+    }
+
+    public async Task<SchemaWriteResult> GenerateEmulatorSchemaAsync(
+        int gameId, bool overwrite = false, CancellationToken cancellationToken = default)
+    {
+        Game? game;
+        await using (var db = await _contextFactory.CreateDbContextAsync(cancellationToken))
+            game = await db.Games.AsNoTracking().Include(g => g.Achievements)
+                .FirstOrDefaultAsync(g => g.Id == gameId, cancellationToken);
+
+        if (game is null)
+            return new SchemaWriteResult { Note = "Game not found." };
+        if (game.SteamAppId is not int appId || appId <= 0)
+            return new SchemaWriteResult
+            {
+                Note = "Link a Steam App ID first so the achievement list can be resolved.",
+            };
+
+        // The target is always <gameDir>\steam_settings\achievements.json, so the write is confined to
+        // the game folder by construction.
+        var target = SteamEmulatorUnlockSource.SchemaTargetPath(game);
+        if (target is null)
+            return new SchemaWriteResult { Note = "Could not resolve the game's folder from its executable path." };
+
+        // Use the real (non-manual) Steam definitions; fetch them first if we have none but can resolve.
+        var defs = game.Achievements.Where(a => !a.IsManualDefinition).ToList();
+        if (defs.Count == 0 && IsAutoResolutionAvailable)
+        {
+            await RefreshCoreAsync(gameId, cancellationToken);
+            await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            defs = await db.Achievements.AsNoTracking()
+                .Where(a => a.GameId == gameId && !a.IsManualDefinition)
+                .ToListAsync(cancellationToken);
+        }
+        if (defs.Count == 0)
+            return new SchemaWriteResult
+            {
+                Note = IsAutoResolutionAvailable
+                    ? "Steam returned no achievements for this App ID — check that the App ID is correct."
+                    : "No achievement definitions are available. Add a Steam Web API key in Settings, then Refresh, first.",
+            };
+
+        if (File.Exists(target) && !overwrite)
+            return new SchemaWriteResult
+            {
+                Path = target,
+                RequiresOverwriteConfirmation = true,
+                Note = "A schema file already exists at the target.",
+            };
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            await File.WriteAllTextAsync(target, SteamEmulatorUnlockSource.BuildSchemaJson(defs), cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not write emulator schema for game {GameId} to {Path}", gameId, target);
+            return new SchemaWriteResult { Path = target, Note = "Could not write the schema file: " + ex.Message };
+        }
+
+        _logger.LogInformation("Wrote emulator achievement schema for game {GameId} ({Count} defs) to {Path}",
+            gameId, defs.Count, target);
+        return new SchemaWriteResult
+        {
+            Written = true,
+            Path = target,
+            Note = $"Wrote {defs.Count} achievement{(defs.Count == 1 ? "" : "s")} to the emulator schema.",
+        };
     }
 
     public async Task SetUnlockedAsync(int gameId, int achievementId, bool unlocked)

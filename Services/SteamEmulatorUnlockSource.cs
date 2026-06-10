@@ -1,4 +1,6 @@
 using System.IO;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Mosaic.Models;
 
 namespace Mosaic.Services;
@@ -27,7 +29,8 @@ public interface IAchievementUnlockSource
 /// <summary>The unlocks read from a game's emulator files plus the per-candidate diagnostic info.</summary>
 public sealed record SourceReadResult(
     IReadOnlyList<ParsedUnlock> Unlocks,
-    IReadOnlyList<ScanCandidateInfo> Candidates);
+    IReadOnlyList<ScanCandidateInfo> Candidates,
+    string? FoundSaveFolder = null);
 
 /// <summary>
 /// Reads unlocks from the files written by common Steam emulators (Goldberg/GSE JSON and
@@ -155,12 +158,26 @@ public class SteamEmulatorUnlockSource : IAchievementUnlockSource
         // recorded — existed, parsed-key count, and any error — for the scan diagnostic.
         var merged = new Dictionary<string, ParsedUnlock>(StringComparer.Ordinal);
         var candidates = new List<ScanCandidateInfo>();
+        var gameDir = SafeDir(game.ExecutablePath);
+        string? foundSaveFolder = null;
 
         foreach (var file in LocateFiles(game))
         {
             var existed = false;
             var count = 0;
             string? error = null;
+
+            // Record whether the candidate's containing folder exists. A folder that exists but is not
+            // the game's own install folder (which always exists) is evidence the emulator ran or is
+            // configured there — used to tell a missing schema from a never-run/unsupported emulator.
+            var dir = SafeDir(file);
+            var dirExisted = dir is not null && Directory.Exists(dir);
+            if (dirExisted && foundSaveFolder is null
+                && !(gameDir is not null && string.Equals(dir, gameDir, StringComparison.OrdinalIgnoreCase)))
+            {
+                foundSaveFolder = dir;
+            }
+
             try
             {
                 if (File.Exists(file))
@@ -190,10 +207,47 @@ public class SteamEmulatorUnlockSource : IAchievementUnlockSource
                 error = ex.GetType().Name;
             }
 
-            candidates.Add(new ScanCandidateInfo(file, existed, count, error));
+            candidates.Add(new ScanCandidateInfo(file, existed, count, error) { DirectoryExisted = dirExisted });
         }
 
-        return new SourceReadResult(merged.Values.ToList(), candidates);
+        return new SourceReadResult(merged.Values.ToList(), candidates, foundSaveFolder);
+    }
+
+    /// <summary>
+    /// The path where a generated gbe_fork/Goldberg achievement schema should be written for this game
+    /// (<c>&lt;gameDir&gt;\steam_settings\achievements.json</c>), or null when the game folder can't be
+    /// resolved from its executable path.
+    /// </summary>
+    public static string? SchemaTargetPath(Game game)
+    {
+        var gameDir = SafeDir(game.ExecutablePath);
+        return gameDir is null ? null : Path.Combine(gameDir, "steam_settings", "achievements.json");
+    }
+
+    /// <summary>
+    /// Serializes achievement definitions into the gbe_fork/Goldberg <c>achievements.json</c> schema:
+    /// a JSON array of objects with the emulator's exact field names. <c>hidden</c> is emitted as the
+    /// string <c>"0"</c>/<c>"1"</c>, and <c>icon</c>/<c>icongray</c> are left empty (Mosaic places no
+    /// image files — only the achievement <c>name</c> matters for unlock tracking). Only the key,
+    /// display name, description, and hidden flag are needed for the emulator to recognize each
+    /// achievement and persist its unlock.
+    /// </summary>
+    public static string BuildSchemaJson(IEnumerable<Achievement> definitions)
+    {
+        var entries = definitions.Select(d => new
+        {
+            name = d.ApiName,
+            displayName = d.DisplayName,
+            description = d.Description ?? string.Empty,
+            hidden = d.Hidden ? "1" : "0",
+            icon = string.Empty,
+            icongray = string.Empty,
+        });
+        return JsonSerializer.Serialize(entries, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
     }
 
     private static string? SafeFolder(Environment.SpecialFolder folder)

@@ -11,6 +11,26 @@ public class AchievementUnlockedEventArgs : EventArgs
     public string? IconPath { get; init; }
 }
 
+/// <summary>
+/// Outcome of generating and placing a Steam-emulator achievement schema for a game. When
+/// <see cref="RequiresOverwriteConfirmation"/> is set, a schema file already exists at
+/// <see cref="Path"/> and nothing was written; the caller should confirm and re-invoke with overwrite.
+/// </summary>
+public sealed record SchemaWriteResult
+{
+    /// <summary>True when a schema file was actually written to disk.</summary>
+    public bool Written { get; init; }
+
+    /// <summary>The target path — the file written, or the existing file awaiting overwrite confirmation.</summary>
+    public string? Path { get; init; }
+
+    /// <summary>True when a schema already exists at the target and overwrite confirmation is required.</summary>
+    public bool RequiresOverwriteConfirmation { get; init; }
+
+    /// <summary>Human-readable explanation suitable for the detail-view status line.</summary>
+    public string Note { get; init; } = string.Empty;
+}
+
 public interface IAchievementService
 {
     /// <summary>Raised (on a background thread) when an achievement is detected newly unlocked during play.</summary>
@@ -49,6 +69,15 @@ public interface IAchievementService
     /// searched, found, parsed, and matched (so a scan that finds nothing can be explained).
     /// </summary>
     Task<ScanResult> ScanUnlocksAsync(int gameId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generates a Steam-emulator achievement schema (gbe_fork/Goldberg <c>achievements.json</c>) from
+    /// the game's resolved definitions and writes it into the game's <c>steam_settings</c> folder so the
+    /// emulator will recognize and persist future unlocks. Does not overwrite an existing schema unless
+    /// <paramref name="overwrite"/> is set; returns a result describing what happened (and whether
+    /// overwrite confirmation is needed). Does not backfill achievements earned before the schema existed.
+    /// </summary>
+    Task<SchemaWriteResult> GenerateEmulatorSchemaAsync(int gameId, bool overwrite = false, CancellationToken cancellationToken = default);
 
     /// <summary>Manually sets an achievement's unlocked/locked state.</summary>
     Task SetUnlockedAsync(int gameId, int achievementId, bool unlocked);

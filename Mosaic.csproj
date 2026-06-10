@@ -15,7 +15,7 @@
          the SDK derives them from Version, so the running app's reported version (which the updater
          compares against the latest release tag) tracks this value. Bump only this one number. -->
     <PropertyGroup>
-        <Version>1.3.0</Version>
+        <Version>1.4.0</Version>
         <Product>Mosaic</Product>
         <Company>Mosaic</Company>
         <Authors>Mosaic</Authors>

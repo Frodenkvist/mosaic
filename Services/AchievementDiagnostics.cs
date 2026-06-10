@@ -7,7 +7,14 @@ namespace Mosaic.Services;
 /// whether it existed, how many achievement keys were parsed from it, and any read/parse error.
 /// Used to make a "nothing detected" result explainable.
 /// </summary>
-public sealed record ScanCandidateInfo(string Path, bool Existed, int ParsedKeyCount, string? Error);
+public sealed record ScanCandidateInfo(string Path, bool Existed, int ParsedKeyCount, string? Error)
+{
+    /// <summary>
+    /// Whether this candidate's containing directory (the emulator save/config folder) existed at scan
+    /// time — lets a "no file" scan tell a present-but-empty save folder from a missing one.
+    /// </summary>
+    public bool DirectoryExisted { get; init; }
+}
 
 /// <summary>
 /// Diagnostic for a single automatic unlock scan: which candidate files were considered and which
@@ -35,6 +42,17 @@ public sealed record ScanDiagnostic
     /// <summary>Set when the scan short-circuited before reading files (e.g. unlinked, disabled).</summary>
     public string? Note { get; init; }
 
+    /// <summary>
+    /// A representative emulator save/config folder that existed but held no achievements file (e.g. a
+    /// <c>GSE Saves\&lt;appid&gt;</c> or <c>steam_settings</c> folder), excluding the game's own install
+    /// folder; null when no such folder was found. Distinguishes a missing achievement schema (the
+    /// emulator ran but recorded nothing) from a game that never ran under a supported emulator.
+    /// </summary>
+    public string? FoundSaveFolder { get; init; }
+
+    /// <summary>True when an emulator save/config folder existed but contained no achievements file.</summary>
+    public bool SaveFolderFound => !string.IsNullOrEmpty(FoundSaveFolder);
+
     public int LocationsConsidered => Candidates.Count;
     public int LocationsFound => Candidates.Count(c => c.Existed);
 
@@ -51,9 +69,16 @@ public sealed record ScanDiagnostic
             var considered = LocationsConsidered;
             var found = LocationsFound;
             if (found == 0)
+            {
+                if (SaveFolderFound)
+                    return $"Found an emulator save folder ({FoundSaveFolder}) but no achievements file " +
+                           "in it — the emulator has no achievement schema, so it recorded no unlocks. " +
+                           "Use “Generate emulator schema” to create one.";
                 return $"No recognized achievement file found (searched {considered} known " +
-                       $"location{(considered == 1 ? "" : "s")}). The game may use an unsupported " +
-                       "emulator or a save location Mosaic doesn't know about.";
+                       $"location{(considered == 1 ? "" : "s")}). No emulator save folder was found either " +
+                       "— the game may not have run under a supported emulator, or uses one Mosaic " +
+                       "doesn't recognize.";
+            }
 
             var parts = new List<string>
             {

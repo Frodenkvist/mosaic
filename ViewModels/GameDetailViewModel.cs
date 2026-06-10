@@ -56,6 +56,7 @@ public partial class GameDetailViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(UnlinkCommand))]
     [NotifyCanExecuteChangedFor(nameof(RefreshAchievementsCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanUnlocksCommand))]
+    [NotifyCanExecuteChangedFor(nameof(GenerateSchemaCommand))]
     [NotifyCanExecuteChangedFor(nameof(AddManualAchievementCommand))]
     [NotifyCanExecuteChangedFor(nameof(ToggleAchievementCommand))]
     private bool _isAchievementBusy;
@@ -272,6 +273,39 @@ public partial class GameDetailViewModel : ObservableObject
             AchievementStatus = count > 0
                 ? $"Found {count} new unlock{(count == 1 ? "" : "s")}."
                 : $"No new unlocks. {result.Diagnostic.Summary}";
+        }
+        finally
+        {
+            IsAchievementBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunAchievementAction))]
+    private async Task GenerateSchema()
+    {
+        IsAchievementBusy = true;
+        try
+        {
+            AchievementStatus = "Generating emulator schema…";
+            var result = await _achievements.GenerateEmulatorSchemaAsync(_gameId);
+
+            // The service never clobbers a hand-made schema silently; confirm, then re-run with overwrite.
+            if (result.RequiresOverwriteConfirmation)
+            {
+                if (!_dialogs.Confirm(
+                        $"A schema file already exists at:\n{result.Path}\n\nOverwrite it?",
+                        "Generate emulator schema"))
+                {
+                    AchievementStatus = "Kept the existing schema file.";
+                    return;
+                }
+                result = await _achievements.GenerateEmulatorSchemaAsync(_gameId, overwrite: true);
+            }
+
+            AchievementStatus = result.Written
+                ? result.Note + " Future unlocks will be tracked — achievements earned before now aren't " +
+                  "backfilled, so mark those manually."
+                : result.Note;
         }
         finally
         {

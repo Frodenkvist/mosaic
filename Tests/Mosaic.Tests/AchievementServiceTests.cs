@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Data;
@@ -319,6 +320,63 @@ public class AchievementServiceTests : IDisposable
         Assert.True(result.Diagnostic.LocationsConsidered > 0);   // it did search known locations
         Assert.Equal(0, result.Diagnostic.LocationsFound);
         Assert.Contains("No recognized achievement file", result.Diagnostic.Summary);
+    }
+
+    [Fact]
+    public async Task GenerateSchema_WritesGbeForkSchema_ForLinkedGameWithDefinitions()
+    {
+        var (gameId, gameDir) = await AddLinkedGameAsync(appId: 9900020);
+        await ResolveSchemaAsync(gameId, ("ACH1", "First", 0), ("ACH2", "Second", 1));
+        var service = NewService("key", _ => Bytes());
+
+        var result = await service.GenerateEmulatorSchemaAsync(gameId);
+
+        var target = Path.Combine(gameDir, "steam_settings", "achievements.json");
+        Assert.True(result.Written);
+        Assert.Equal(target, result.Path);
+        Assert.True(File.Exists(target));
+
+        using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(target));
+        Assert.Equal(JsonValueKind.Array, doc.RootElement.ValueKind);
+        Assert.Equal(2, doc.RootElement.GetArrayLength());
+        Assert.Equal("ACH1", doc.RootElement[0].GetProperty("name").GetString());
+        Assert.Equal("1", doc.RootElement[1].GetProperty("hidden").GetString()); // ACH2 was hidden
+    }
+
+    [Fact]
+    public async Task GenerateSchema_Refuses_WhenNoDefinitionsAndNoApiKey()
+    {
+        var (gameId, gameDir) = await AddLinkedGameAsync(appId: 9900021);
+        var service = NewService(apiKey: null, _ => throw new InvalidOperationException("must not call Steam"));
+
+        var result = await service.GenerateEmulatorSchemaAsync(gameId);
+
+        Assert.False(result.Written);
+        Assert.False(File.Exists(Path.Combine(gameDir, "steam_settings", "achievements.json")));
+        Assert.Contains("Steam Web API key", result.Note);
+    }
+
+    [Fact]
+    public async Task GenerateSchema_DoesNotOverwriteExisting_UnlessOverwriteRequested()
+    {
+        var (gameId, gameDir) = await AddLinkedGameAsync(appId: 9900022);
+        await ResolveSchemaAsync(gameId, ("ACH1", "First", 0));
+        var service = NewService("key", _ => Bytes());
+
+        var target = Path.Combine(gameDir, "steam_settings", "achievements.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        await File.WriteAllTextAsync(target, "SENTINEL"); // a hand-made schema must not be clobbered
+
+        var blocked = await service.GenerateEmulatorSchemaAsync(gameId); // overwrite: false
+        Assert.False(blocked.Written);
+        Assert.True(blocked.RequiresOverwriteConfirmation);
+        Assert.Equal(target, blocked.Path);
+        Assert.Equal("SENTINEL", await File.ReadAllTextAsync(target)); // left untouched
+
+        var written = await service.GenerateEmulatorSchemaAsync(gameId, overwrite: true);
+        Assert.True(written.Written);
+        using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(target));
+        Assert.Equal("ACH1", doc.RootElement[0].GetProperty("name").GetString());
     }
 
     // --- helpers ---
